@@ -1,0 +1,14 @@
+# Chaves e credenciais (CRÍTICO)
+.env
+
+# Logs e arquivos temporários de execução
+*.log
+.dependencias_ok
+
+# Livros, áudios e arquivos pesados
+arquivos/
+meus audiobooks/
+
+# Cache do Python
+__pycache__/
+*.pyc
