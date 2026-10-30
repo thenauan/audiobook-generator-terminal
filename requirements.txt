@@ -1,0 +1,10 @@
+edge-tts
+beautifulsoup4
+lxml
+pypdf
+pdfplumber
+mobi
+langdetect
+mutagen
+deep-translator
+pillow

@@ -1,0 +1,407 @@
+{
+ "idiomas": {
+  "af": {
+   "pt": "Africâner",
+   "nativo": "Afrikaans"
+  },
+  "am": {
+   "pt": "Amárico",
+   "nativo": "አማርኛ"
+  },
+  "ar": {
+   "pt": "Árabe",
+   "nativo": "العربية"
+  },
+  "az": {
+   "pt": "Azerbaijano",
+   "nativo": "Azərbaycan"
+  },
+  "bg": {
+   "pt": "Búlgaro",
+   "nativo": "Български"
+  },
+  "bn": {
+   "pt": "Bengali",
+   "nativo": "বাংলা"
+  },
+  "bs": {
+   "pt": "Bósnio",
+   "nativo": "Bosanski"
+  },
+  "ca": {
+   "pt": "Catalão",
+   "nativo": "Català"
+  },
+  "cs": {
+   "pt": "Tcheco",
+   "nativo": "Čeština"
+  },
+  "cy": {
+   "pt": "Galês",
+   "nativo": "Cymraeg"
+  },
+  "da": {
+   "pt": "Dinamarquês",
+   "nativo": "Dansk"
+  },
+  "de": {
+   "pt": "Alemão",
+   "nativo": "Deutsch"
+  },
+  "el": {
+   "pt": "Grego",
+   "nativo": "Ελληνικά"
+  },
+  "en": {
+   "pt": "Inglês",
+   "nativo": "English"
+  },
+  "es": {
+   "pt": "Espanhol",
+   "nativo": "Español"
+  },
+  "et": {
+   "pt": "Estoniano",
+   "nativo": "Eesti"
+  },
+  "fa": {
+   "pt": "Persa",
+   "nativo": "فارسی"
+  },
+  "fi": {
+   "pt": "Finlandês",
+   "nativo": "Suomi"
+  },
+  "fil": {
+   "pt": "Filipino",
+   "nativo": "Filipino"
+  },
+  "fr": {
+   "pt": "Francês",
+   "nativo": "Français"
+  },
+  "ga": {
+   "pt": "Irlandês",
+   "nativo": "Gaeilge"
+  },
+  "gl": {
+   "pt": "Galego",
+   "nativo": "Galego"
+  },
+  "gu": {
+   "pt": "Guzerate",
+   "nativo": "ગુજરાતી"
+  },
+  "he": {
+   "pt": "Hebraico",
+   "nativo": "עברית"
+  },
+  "hi": {
+   "pt": "Híndi",
+   "nativo": "हिन्दी"
+  },
+  "hr": {
+   "pt": "Croata",
+   "nativo": "Hrvatski"
+  },
+  "hu": {
+   "pt": "Húngaro",
+   "nativo": "Magyar"
+  },
+  "id": {
+   "pt": "Indonésio",
+   "nativo": "Indonesia"
+  },
+  "is": {
+   "pt": "Islandês",
+   "nativo": "Íslenska"
+  },
+  "it": {
+   "pt": "Italiano",
+   "nativo": "Italiano"
+  },
+  "ja": {
+   "pt": "Japonês",
+   "nativo": "日本語"
+  },
+  "jv": {
+   "pt": "Javanês",
+   "nativo": "Jawa"
+  },
+  "ka": {
+   "pt": "Georgiano",
+   "nativo": "Ქართული"
+  },
+  "kk": {
+   "pt": "Cazaque",
+   "nativo": "Қазақ тілі"
+  },
+  "km": {
+   "pt": "Khmer",
+   "nativo": "ខ្មែរ"
+  },
+  "kn": {
+   "pt": "Canarim",
+   "nativo": "ಕನ್ನಡ"
+  },
+  "ko": {
+   "pt": "Coreano",
+   "nativo": "한국어"
+  },
+  "lo": {
+   "pt": "Laosiano",
+   "nativo": "ລາວ"
+  },
+  "lt": {
+   "pt": "Lituano",
+   "nativo": "Lietuvių"
+  },
+  "lv": {
+   "pt": "Letão",
+   "nativo": "Latviešu"
+  },
+  "mk": {
+   "pt": "Macedônio",
+   "nativo": "Македонски"
+  },
+  "ml": {
+   "pt": "Malaiala",
+   "nativo": "മലയാളം"
+  },
+  "mn": {
+   "pt": "Mongol",
+   "nativo": "Монгол"
+  },
+  "mr": {
+   "pt": "Marati",
+   "nativo": "मराठी"
+  },
+  "ms": {
+   "pt": "Malaio",
+   "nativo": "Melayu"
+  },
+  "my": {
+   "pt": "Birmanês",
+   "nativo": "မြန်မာ"
+  },
+  "nb": {
+   "pt": "Bokmål norueguês",
+   "nativo": "Norsk bokmål"
+  },
+  "ne": {
+   "pt": "Nepalês",
+   "nativo": "नेपाली"
+  },
+  "nl": {
+   "pt": "Holandês",
+   "nativo": "Nederlands"
+  },
+  "pl": {
+   "pt": "Polonês",
+   "nativo": "Polski"
+  },
+  "ps": {
+   "pt": "Pashto",
+   "nativo": "پښتو"
+  },
+  "pt": {
+   "pt": "Português",
+   "nativo": "Português"
+  },
+  "ro": {
+   "pt": "Romeno",
+   "nativo": "Română"
+  },
+  "ru": {
+   "pt": "Russo",
+   "nativo": "Русский"
+  },
+  "si": {
+   "pt": "Cingalês",
+   "nativo": "සිංහල"
+  },
+  "sk": {
+   "pt": "Eslovaco",
+   "nativo": "Slovenčina"
+  },
+  "sl": {
+   "pt": "Esloveno",
+   "nativo": "Slovenščina"
+  },
+  "so": {
+   "pt": "Somali",
+   "nativo": "Soomaali"
+  },
+  "sq": {
+   "pt": "Albanês",
+   "nativo": "Shqip"
+  },
+  "sr": {
+   "pt": "Sérvio",
+   "nativo": "Српски"
+  },
+  "su": {
+   "pt": "Sundanês",
+   "nativo": "Basa Sunda"
+  },
+  "sv": {
+   "pt": "Sueco",
+   "nativo": "Svenska"
+  },
+  "sw": {
+   "pt": "Suaíli",
+   "nativo": "Kiswahili"
+  },
+  "ta": {
+   "pt": "Tâmil",
+   "nativo": "தமிழ்"
+  },
+  "te": {
+   "pt": "Télugo",
+   "nativo": "తెలుగు"
+  },
+  "th": {
+   "pt": "Tailandês",
+   "nativo": "ไทย"
+  },
+  "tr": {
+   "pt": "Turco",
+   "nativo": "Türkçe"
+  },
+  "uk": {
+   "pt": "Ucraniano",
+   "nativo": "Українська"
+  },
+  "ur": {
+   "pt": "Urdu",
+   "nativo": "اردو"
+  },
+  "uz": {
+   "pt": "Uzbeque",
+   "nativo": "O‘zbek"
+  },
+  "vi": {
+   "pt": "Vietnamita",
+   "nativo": "Tiếng Việt"
+  },
+  "zh": {
+   "pt": "Chinês",
+   "nativo": "中文"
+  },
+  "zu": {
+   "pt": "Zulu",
+   "nativo": "IsiZulu"
+  }
+ },
+ "regioes": {
+  "ZA": "África do Sul",
+  "ET": "Etiópia",
+  "AE": "Emirados Árabes Unidos",
+  "BH": "Barein",
+  "DZ": "Argélia",
+  "EG": "Egito",
+  "IQ": "Iraque",
+  "JO": "Jordânia",
+  "KW": "Kuwait",
+  "LB": "Líbano",
+  "LY": "Líbia",
+  "MA": "Marrocos",
+  "OM": "Omã",
+  "QA": "Catar",
+  "SA": "Arábia Saudita",
+  "SY": "Síria",
+  "TN": "Tunísia",
+  "YE": "Iêmen",
+  "AZ": "Azerbaijão",
+  "BG": "Bulgária",
+  "BD": "Bangladesh",
+  "IN": "Índia",
+  "BA": "Bósnia e Herzegovina",
+  "ES": "Espanha",
+  "CZ": "Tchéquia",
+  "GB": "Reino Unido",
+  "DK": "Dinamarca",
+  "AT": "Áustria",
+  "CH": "Suíça",
+  "DE": "Alemanha",
+  "GR": "Grécia",
+  "AU": "Austrália",
+  "CA": "Canadá",
+  "HK": "Hong Kong, RAE da China",
+  "IE": "Irlanda",
+  "KE": "Quênia",
+  "NG": "Nigéria",
+  "NZ": "Nova Zelândia",
+  "PH": "Filipinas",
+  "SG": "Singapura",
+  "TZ": "Tanzânia",
+  "US": "Estados Unidos",
+  "AR": "Argentina",
+  "BO": "Bolívia",
+  "CL": "Chile",
+  "CO": "Colômbia",
+  "CR": "Costa Rica",
+  "CU": "Cuba",
+  "DO": "República Dominicana",
+  "EC": "Equador",
+  "GQ": "Guiné Equatorial",
+  "GT": "Guatemala",
+  "HN": "Honduras",
+  "MX": "México",
+  "NI": "Nicarágua",
+  "PA": "Panamá",
+  "PE": "Peru",
+  "PR": "Porto Rico",
+  "PY": "Paraguai",
+  "SV": "El Salvador",
+  "UY": "Uruguai",
+  "VE": "Venezuela",
+  "EE": "Estônia",
+  "IR": "Irã",
+  "FI": "Finlândia",
+  "BE": "Bélgica",
+  "FR": "França",
+  "IL": "Israel",
+  "HR": "Croácia",
+  "HU": "Hungria",
+  "ID": "Indonésia",
+  "IS": "Islândia",
+  "IT": "Itália",
+  "JP": "Japão",
+  "GE": "Geórgia",
+  "KZ": "Cazaquistão",
+  "KH": "Camboja",
+  "KR": "Coreia do Sul",
+  "LA": "Laos",
+  "LT": "Lituânia",
+  "LV": "Letônia",
+  "MK": "Macedônia do Norte",
+  "MN": "Mongólia",
+  "MY": "Malásia",
+  "MM": "Mianmar (Birmânia)",
+  "NO": "Noruega",
+  "NP": "Nepal",
+  "NL": "Países Baixos",
+  "PL": "Polônia",
+  "AF": "Afeganistão",
+  "BR": "Brasil",
+  "PT": "Portugal",
+  "RO": "Romênia",
+  "RU": "Rússia",
+  "LK": "Sri Lanka",
+  "SK": "Eslováquia",
+  "SI": "Eslovênia",
+  "SO": "Somália",
+  "AL": "Albânia",
+  "RS": "Sérvia",
+  "SE": "Suécia",
+  "TH": "Tailândia",
+  "TR": "Turquia",
+  "UA": "Ucrânia",
+  "PK": "Paquistão",
+  "UZ": "Uzbequistão",
+  "VN": "Vietnã",
+  "CN": "China",
+  "TW": "Taiwan"
+ }
+}
