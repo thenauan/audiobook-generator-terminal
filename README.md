@@ -1,6 +1,8 @@
-# Audiobook Generator — versão de terminal
+# Audiobook Generator — terminal edition
 
-Converte e-books (**EPUB, PDF, MOBI, AZW3, TXT**) em audiobooks (**M4B, MP3, Opus, FLAC, WAV**) direto no terminal — no **Windows, macOS e Linux** — com o **mesmo motor de conversão** do [Audiobook Generator](https://github.com/thenauan/audiobook-generator): capítulos, capa, vozes neurais da Microsoft (313 vozes, 73 idiomas), tradução e texto sincronizado para audiobook players.
+Converts e-books (**EPUB, PDF, MOBI, AZW3, TXT**) into audiobooks (**M4B, MP3, Opus, FLAC, WAV**) right from the terminal — on **Windows, macOS and Linux** — using the **same conversion engine** as [Audiobook Generator](https://github.com/thenauan/audiobook-generator): chapters, cover art, Microsoft neural voices (313 voices, 73 languages), translation and synced text for audiobook players.
+
+> The app's interface is in Portuguese.
 
 ```
   ◆ Etapa 6/6  🚀  Convertendo
@@ -12,95 +14,95 @@ Converte e-books (**EPUB, PDF, MOBI, AZW3, TXT**) em audiobooks (**M4B, MP3, Opu
 
 ## Download
 
-Baixe a versão mais recente em **[Releases](https://github.com/thenauan/audiobook-generator-terminal/releases/latest)** (`.zip` para Windows, `.tar.gz` para macOS e Linux) ou clone o repositório:
+Get the latest version from **[Releases](https://github.com/thenauan/audiobook-generator-terminal/releases/latest)** (`.zip` for Windows, `.tar.gz` for macOS and Linux), or clone the repository:
 
 ```bash
 git clone https://github.com/thenauan/audiobook-generator-terminal.git
 cd audiobook-generator-terminal
 ```
 
-## Instalação
+## Installation
 
-Precisa do **Python 3.10+** e do **FFmpeg** (o FFmpeg junta os capítulos e gera o arquivo final, em qualquer formato).
+You need **Python 3.10+** and **FFmpeg** (FFmpeg joins the chapters and builds the final file, in every format).
 
-| Sistema | Python e FFmpeg | Bibliotecas do Python |
+| System | Python and FFmpeg | Python libraries |
 |---|---|---|
-| **Windows** | [python.org](https://www.python.org/downloads/) (marque *Add Python to PATH*) e `winget install Gyan.FFmpeg` | `python -m pip install -r requirements.txt` |
+| **Windows** | [python.org](https://www.python.org/downloads/) (check *Add Python to PATH*) and `winget install Gyan.FFmpeg` | `python -m pip install -r requirements.txt` |
 | **macOS** | `brew install python python-tk ffmpeg` | `python3 -m pip install -r requirements.txt` |
 | **Linux** (Debian/Ubuntu) | `sudo apt install python3 python3-pip python3-tk ffmpeg` | `python3 -m pip install -r requirements.txt` |
 | **Linux** (Fedora) | `sudo dnf install python3 python3-pip python3-tkinter ffmpeg` | `python3 -m pip install -r requirements.txt` |
 | **Linux** (Arch) | `sudo pacman -S python python-pip tk ffmpeg` | `python3 -m pip install -r requirements.txt` |
 
-> Em distribuições que bloqueiam o `pip` do sistema (erro *externally-managed-environment*), use um ambiente virtual:
-> `python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt`, e rode o app com o `.venv` ativado.
+> On distributions that block the system `pip` (*externally-managed-environment* error), use a virtual environment:
+> `python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt`, and run the app with `.venv` activated.
 
-O `tk` (tkinter) é opcional: com ele, os livros e a pasta são escolhidos numa janela do sistema; sem ele (ou num servidor via SSH), basta digitar ou arrastar os arquivos para o terminal.
+`tk` (tkinter) is optional: with it, books and the output folder are picked in a system dialog; without it (or on a server over SSH), just type or drag the files into the terminal.
 
-## Uso
+## Usage
 
-| Sistema | Como abrir |
+| System | How to start |
 |---|---|
-| **Windows** | dois cliques em `Audiobook Generator (terminal).bat` |
-| **macOS** | dois cliques em `Audiobook Generator (terminal).command`, ou `./audiobook-cli.sh` no Terminal |
+| **Windows** | double-click `Audiobook Generator (terminal).bat` |
+| **macOS** | double-click `Audiobook Generator (terminal).command`, or run `./audiobook-cli.sh` in Terminal |
 | **Linux** | `./audiobook-cli.sh` |
-| **Qualquer um** | `python audiobook_cli.py` (ou `python3`) |
+| **Any** | `python audiobook_cli.py` (or `python3`) |
 
-Também dá para passar os livros e a pasta na linha de comando:
+You can also pass the books and the output folder on the command line:
 
 ```bash
-./audiobook-cli.sh livro.epub outro.pdf -o ~/Audiobooks           # macOS / Linux
-python audiobook_cli.py livro.epub outro.pdf -o "C:\Audiobooks"   # Windows
+./audiobook-cli.sh book.epub other.pdf -o ~/Audiobooks           # macOS / Linux
+python audiobook_cli.py book.epub other.pdf -o "C:\Audiobooks"   # Windows
 ```
 
-> **macOS:** na primeira vez, o Gatekeeper pode bloquear o `.command` baixado da internet. Clique com o botão direito → **Abrir**, ou rode `xattr -d com.apple.quarantine *.command *.sh` na pasta.
-> Se aparecer *permission denied*, rode `chmod +x audiobook-cli.sh "Audiobook Generator (terminal).command"`.
+> **macOS:** the first time, Gatekeeper may block the `.command` file downloaded from the internet. Right-click → **Open**, or run `xattr -d com.apple.quarantine *.command *.sh` in the folder.
+> If you get *permission denied*, run `chmod +x audiobook-cli.sh "Audiobook Generator (terminal).command"`.
 
-## Como funciona
+## How it works
 
-| Etapa | O que acontece |
+| Step | What happens |
 |---|---|
-| 1. E-books | Abre o seletor de arquivos (ou use os arquivos da linha de comando, ou arraste-os para o terminal). Título, autor, gênero, subgênero, ano, idioma e capítulos são lidos automaticamente. |
-| 2. Cada livro | Mostra o que foi identificado e pergunta se quer editar. Depois: **traduzir** (para português, inglês, espanhol, árabe ou russo), **texto sincronizado** (sim/não) e **voz** (`o 3` toca a voz 3 lendo um trecho do próprio livro). Dá para repetir as escolhas nos outros livros do mesmo idioma. |
-| 3. Formato | M4B (padrão), MP3, MP3 por capítulo, Opus, FLAC ou WAV. |
-| 4. Pasta | Abre o seletor de pastas (padrão: `Documentos/Audiobook Generator`). |
-| 5. Resumo | Confere tudo antes de começar. |
-| 6. Conversão | Uma barra por livro, com etapa, tempo restante, partes narradas e velocidade real. |
+| 1. E-books | Opens the file picker (or uses the files from the command line, or files dragged into the terminal). Title, author, genre, subgenre, year, language and chapters are read automatically. |
+| 2. Each book | Shows what was detected and asks whether you want to edit it. Then: **translate** (to Portuguese, English, Spanish, Arabic or Russian), **synced text** (yes/no) and **voice** (`o 3` plays voice 3 reading an excerpt of the book itself). The choices can be reused for the other books in the same language. |
+| 3. Format | M4B (default), MP3, MP3 per chapter, Opus, FLAC or WAV. |
+| 4. Folder | Opens the folder picker (default: `Documents/Audiobook Generator`). |
+| 5. Summary | Review everything before starting. |
+| 6. Conversion | One progress bar per book, with stage, time remaining, narrated parts and real speed. |
 
-A capa vem do próprio e-book e os capítulos são detectados sozinhos — não há edição de capa nem de metadados avançados, para ir direto ao ponto.
+The cover comes from the e-book itself and chapters are detected automatically — there is no cover or advanced metadata editing, to keep things straight to the point.
 
-### Cancelar e continuar depois
+### Cancel and resume later
 
-Durante a conversão, **Ctrl+C** pausa o painel e pergunta se quer cancelar:
+During conversion, **Ctrl+C** pauses the progress panel and asks whether to cancel:
 
-- **n** (ou Enter) — a conversão continua de onde estava;
-- **s** — cancela e encerra o motor e o FFmpeg (nenhum processo fica rodando para trás);
-- **Ctrl+C de novo** — confirma o cancelamento.
+- **n** (or Enter) — the conversion continues where it was;
+- **s** — cancels and stops the engine and FFmpeg (no processes are left running);
+- **Ctrl+C again** — confirms the cancellation.
 
-O que já foi narrado fica salvo em `.cache_audiobooks` dentro da pasta de destino: converta o mesmo livro de novo, com a mesma voz e a mesma pasta, e ele continua de onde parou.
+Everything already narrated is kept in `.cache_audiobooks` inside the output folder: convert the same book again, with the same voice and folder, and it resumes where it stopped.
 
-## Cores e ícones
+## Colors and icons
 
-| Cor | Uso | | Ícone | Uso |
+| Color | Used for | | Icon | Used for |
 |---|---|---|---|---|
-| ciano | etapas, números e teclas | | ◆ | etapa |
-| branco | dados | | › | pergunta |
-| cinza | dicas | | ✔ / ✖ / ▲ | concluído / erro / aviso |
-| verde | sucesso | | 📚 🎙 🌐 📝 💾 🎧 | livros, voz, idioma, texto, pasta, formato |
-| amarelo | avisos | | | |
-| vermelho | erros | | | |
+| cyan | steps, numbers and keys | | ◆ | step |
+| white | data | | › | question |
+| gray | hints | | ✔ / ✖ / ▲ | done / error / warning |
+| green | success | | 📚 🎙 🌐 📝 💾 🎧 | books, voice, language, text, folder, format |
+| yellow | warnings | | | |
+| red | errors | | | |
 
-No console antigo do Windows e no console de texto do Linux (sem emojis), os ícones viram símbolos simples. Para desligar as cores: `NO_COLOR=1`.
+On the legacy Windows console and the Linux text console (no emoji), icons fall back to simple symbols. To turn colors off: `NO_COLOR=1`.
 
-## Requisitos
+## Requirements
 
-- Python 3.10 ou mais novo
-- FFmpeg no `PATH`
-- Internet (as vozes neurais e a tradução são serviços online)
+- Python 3.10 or newer
+- FFmpeg on `PATH`
+- Internet connection (neural voices and translation are online services)
 
-## Manutenção
+## Maintenance
 
-O motor (`motor/`) é uma cópia do motor do app. Depois de mudar o app, atualize com:
+The engine (`motor/`) is a copy of the app's engine. After changing the app, update it with:
 
 ```bash
-python atualizar_motor.py [caminho-do-app]
+python atualizar_motor.py [path-to-the-app]
 ```
