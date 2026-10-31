@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "audiobook-generator-terminal"
+version = "1.4.0"
+description = "Convert e-books (EPUB, PDF, MOBI, AZW3, TXT) into audiobooks (M4B, MP3, Opus, FLAC, WAV) from the terminal, with neural voices, chapters, cover art, translation and synced text."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "thenauan" }]
+keywords = ["audiobook", "ebook", "tts", "text-to-speech", "edge-tts", "epub", "m4b", "cli"]
+classifiers = [
+    "Environment :: Console",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+dependencies = [
+    "edge-tts",
+    "beautifulsoup4",
+    "lxml",
+    "pypdf",
+    "pdfplumber",
+    "mobi",
+    "langdetect",
+    "mutagen",
+    "deep-translator",
+    "pillow",
+]
+
+[project.urls]
+Homepage = "https://github.com/thenauan/audiobook-generator-terminal"
+
+[project.scripts]
+audiobook-generator = "audiobook_generator_terminal.audiobook_cli:executar"
+
+# O repositório é o próprio pacote: os módulos ficam na raiz (rodam direto com python audiobook_cli.py)
+# e, instalados, viram audiobook_generator_terminal; o motor vai junto como arquivos (roda como script)
+[tool.setuptools]
+packages = ["audiobook_generator_terminal", "audiobook_generator_terminal.motor"]
+include-package-data = false
+
+[tool.setuptools.package-dir]
+audiobook_generator_terminal = "."
+"audiobook_generator_terminal.motor" = "motor"
+
+[tool.setuptools.package-data]
+audiobook_generator_terminal = ["dados/*.json", "dados/i18n/*.json"]

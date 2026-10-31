@@ -12,7 +12,20 @@ The interface speaks **English, Spanish, Portuguese, Russian, Arabic, French, It
   ● Memórias Póstumas de Br…   ━━━━━━━━━━━━━━━━━━━━━━━━   0.0%  Queued · calculating
 ```
 
-## Download
+## Installation
+
+You need **Python 3.10+**. **FFmpeg** is recommended: without it only MP3 is available (without chapter volume levelling); with it you also get M4B, Opus, FLAC and WAV.
+
+### Quickest: pipx (one command, works on Windows, macOS and Linux)
+
+```bash
+pipx install git+https://github.com/thenauan/audiobook-generator-terminal.git
+audiobook-generator
+```
+
+[pipx](https://pipx.pypa.io/) installs the app in its own environment and adds the `audiobook-generator` command. Update with `pipx upgrade audiobook-generator-terminal`. (`pip install git+https://…` works too.)
+
+### Or download / clone
 
 Get the latest version from **[Releases](https://github.com/thenauan/audiobook-generator-terminal/releases/latest)** (`.zip` for Windows, `.tar.gz` for macOS and Linux), or clone the repository:
 
@@ -21,9 +34,7 @@ git clone https://github.com/thenauan/audiobook-generator-terminal.git
 cd audiobook-generator-terminal
 ```
 
-## Installation
-
-You need **Python 3.10+** and **FFmpeg** (FFmpeg joins the chapters and builds the final file, in every format).
+and install the dependencies:
 
 | System | Python and FFmpeg | Python libraries |
 |---|---|---|
@@ -45,6 +56,7 @@ You need **Python 3.10+** and **FFmpeg** (FFmpeg joins the chapters and builds t
 | **Windows** | double-click `Audiobook Generator (terminal).bat` |
 | **macOS** | double-click `Audiobook Generator (terminal).command`, or run `./audiobook-cli.sh` in Terminal |
 | **Linux** | `./audiobook-cli.sh` |
+| **Installed with pipx/pip** | `audiobook-generator` |
 | **Any** | `python audiobook_cli.py` (or `python3`) |
 
 You can also pass the books and the output folder on the command line:
@@ -53,6 +65,36 @@ You can also pass the books and the output folder on the command line:
 ./audiobook-cli.sh book.epub other.pdf -o ~/Audiobooks           # macOS / Linux
 python audiobook_cli.py book.epub other.pdf -o "C:\Audiobooks"   # Windows
 ```
+
+### Without questions (scripts and batches)
+
+Every question has an option; `--yes` skips the rest, using your last choices (or the defaults):
+
+```bash
+audiobook-generator *.epub --voice en-US-AndrewNeural --format m4b --no-sync --yes -o ~/Audiobooks
+```
+
+| Option | What it does |
+|---|---|
+| `--voice NAME` | voice to use (e.g. `pt-BR-AntonioNeural`, `en-GB-SoniaNeural`) |
+| `--format` | `m4b`, `mp3`, `mp3-chapters`, `opus`, `flac` or `wav` |
+| `--quality` | `voice` (default), `standard`, `high` or `max` — see below |
+| `--translate LANG` | translate the books (`en`, `es`, `pt`, `ru`, `ar`, `fr`, `it`, `tr`, `hi`, `zh`, `ur`) |
+| `--sync` / `--no-sync` | create (or not) synced text for audiobook players |
+| `-y`, `--yes` | no questions |
+| `--lite` / `--turbo` | lite: one book at a time, leaves the computer free · turbo: more connections and CPU, faster |
+| `-o`, `--output` | output folder |
+| `--lang` | interface language |
+
+The app remembers your last voice (per language), format, quality, folder and synced-text choice and suggests them next time.
+
+### Audio quality
+
+The neural voices arrive as **24 kHz mono MP3 at 96 kbps**. The default `voice` profile keeps that size — **MP3 96 kbps, AAC (M4B) 64 kbps, Opus 40 kbps**, no resampling — so files are about **half the size** of `high`, with the same sound. `standard`, `high` and `max` use higher bitrates and 44.1 kHz, which doesn't add detail to a synthesized voice.
+
+### Choosing a voice
+
+Type the voice number, or `o 3` to hear voice 3 reading an excerpt of the book. In languages with many voices, filter the list: `f` (female), `m` (male), `r GB` (region — e.g. `r BR`, `r US`, `r IN`) and `t` (all again).
 
 ### Interface language
 
@@ -89,7 +131,7 @@ During conversion, **Ctrl+C** pauses the progress panel and asks whether to canc
 - **y** — cancels and stops the engine and FFmpeg (no processes are left running);
 - **Ctrl+C again** — confirms the cancellation.
 
-Everything already narrated is kept in `.cache_audiobooks` inside the output folder: convert the same book again, with the same voice and folder, and it resumes where it stopped.
+Everything already narrated is kept in `.cache_audiobooks` inside the output folder: convert the same book file again, with the same voice and folder, and it resumes where it stopped (even if you edited the title).
 
 ## Colors and icons
 
@@ -107,7 +149,7 @@ On the legacy Windows console and the Linux text console (no emoji), icons fall 
 ## Requirements
 
 - Python 3.10 or newer
-- FFmpeg on `PATH`
+- FFmpeg on `PATH` (optional: without it, MP3 only)
 - Internet connection (neural voices and translation are online services)
 
 ## Maintenance

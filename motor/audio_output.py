@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import base64
 import os
+import shutil
 import subprocess
 import types
 from typing import Any, Dict, List, Optional
@@ -47,14 +48,16 @@ def obter_communicate():
 # ----- Formatos de saída -----
 # value (o mesmo usado no app) -> extensão, codificador, taxa por qualidade, taxa de amostragem
 FORMATOS: Dict[str, Dict[str, Any]] = {
-    "single":   {"ext": ".mp3",  "codec": "libmp3lame", "bitrate": {"standard": "128k", "high": "192k", "max": "320k"}, "ar": 44100},
-    "multiple": {"ext": ".mp3",  "codec": "libmp3lame", "bitrate": {"standard": "128k", "high": "192k", "max": "320k"}, "ar": 44100},
-    "m4b":      {"ext": ".m4b",  "codec": "aac",        "bitrate": {"standard": "96k",  "high": "128k", "max": "256k"}, "ar": 44100, "muxer": "mp4"},
-    "opus":     {"ext": ".opus", "codec": "libopus",    "bitrate": {"standard": "48k",  "high": "64k",  "max": "128k"}, "ar": 48000},
+    "single":   {"ext": ".mp3",  "codec": "libmp3lame", "bitrate": {"voice": "96k", "standard": "128k", "high": "192k", "max": "320k"}, "ar": 44100},
+    "multiple": {"ext": ".mp3",  "codec": "libmp3lame", "bitrate": {"voice": "96k", "standard": "128k", "high": "192k", "max": "320k"}, "ar": 44100},
+    "m4b":      {"ext": ".m4b",  "codec": "aac",        "bitrate": {"voice": "64k", "standard": "96k",  "high": "128k", "max": "256k"}, "ar": 44100, "muxer": "mp4"},
+    "opus":     {"ext": ".opus", "codec": "libopus",    "bitrate": {"voice": "40k", "standard": "48k",  "high": "64k",  "max": "128k"}, "ar": 48000},
     "flac":     {"ext": ".flac", "codec": "flac",       "bitrate": None, "ar": None},
     "wav":      {"ext": ".wav",  "codec": "pcm_s16le",  "bitrate": None, "ar": None},
 }
-QUALIDADES = ("standard", "high", "max")
+# "voice": do tamanho da voz de origem (MP3 24 kHz a 96 kbps), sem reamostrar — metade do tamanho de "high",
+# mesmo som. As outras sobem a taxa (44,1 kHz e mais kbps), o que não acrescenta detalhe à voz sintetizada.
+QUALIDADES = ("voice", "standard", "high", "max")
 EXTENSOES_AUDIO = {".mp3", ".m4b", ".m4a", ".opus", ".ogg", ".flac", ".wav"}
 
 
@@ -71,8 +74,10 @@ def argumentos_codec(fmt: str, q: str) -> List[str]:
     args = ["-c:a", spec["codec"], "-ac", "1"]
     if spec["bitrate"]:
         args += ["-b:a", spec["bitrate"][qualidade(q)]]
-    if spec["ar"]:
-        args += ["-ar", str(spec["ar"])]
+    # Perfil "voice": MP3 e AAC na taxa de amostragem da voz (24 kHz); o Opus trabalha sempre a 48 kHz
+    ar = 24000 if qualidade(q) == "voice" and spec["codec"] in ("libmp3lame", "aac") else spec["ar"]
+    if ar:
+        args += ["-ar", str(ar)]
     if spec["codec"] == "libopus":
         args += ["-application", "voip" if qualidade(q) == "standard" else "audio"]
     if spec["codec"] == "flac":
@@ -80,16 +85,23 @@ def argumentos_codec(fmt: str, q: str) -> List[str]:
     return args
 
 
+def ffmpeg_disponivel() -> bool:
+    return shutil.which("ffmpeg") is not None
+
+
 def _rodar(cmd: List[str]) -> subprocess.CompletedProcess:
     # Sem janela no Windows (o FFmpeg é um programa de console)
     flags = 0x08000000 if os.name == "nt" else 0
-    return subprocess.run(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                          encoding="utf-8", errors="replace", creationflags=flags)
+    try:
+        return subprocess.run(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                              encoding="utf-8", errors="replace", creationflags=flags)
+    except OSError as e:  # programa não instalado: falha como um código de saída, para quem chamou decidir
+        return subprocess.CompletedProcess(cmd, 127, "", str(e))
 
 
 def _rodar_com_progresso(cmd: List[str], total_ms: int, ao_progresso=None) -> subprocess.CompletedProcess:
     """Roda o FFmpeg informando quanto do áudio já foi gerado (fração de 0 a 1), lendo o -progress dele."""
-    if not ao_progresso or total_ms <= 0:
+    if not ao_progresso or total_ms <= 0 or not ffmpeg_disponivel():
         return _rodar(cmd)
     flags = 0x08000000 if os.name == "nt" else 0
     cmd = cmd[:1] + ["-progress", "pipe:1", "-nostats"] + cmd[1:]
@@ -120,6 +132,8 @@ def _rodar_com_progresso(cmd: List[str], total_ms: int, ao_progresso=None) -> su
 # ----- Capítulos -----
 def normalizar_capitulo(entrada_mp3: str, saida_flac: str) -> bool:
     """Pausa de 1,5 s no início + normalização EBU R128 (-18 LUFS), guardado sem perda (FLAC 24 kHz)."""
+    if not ffmpeg_disponivel():
+        return False  # sem FFmpeg: o capítulo fica com a voz como veio
     cmd = ["ffmpeg", "-y", "-i", entrada_mp3,
            "-af", "adelay=1500|1500,loudnorm=I=-18:TP=-1.5:LRA=10",
            "-c:a", "flac", "-ar", "24000", "-ac", "1", saida_flac]
@@ -261,6 +275,9 @@ def gerar_arquivo_unico(saida: str, fmt: str, q: str, capitulos: List[Dict[str, 
                         ao_progresso=None) -> None:
     """Junta os capítulos (FLAC do cache) num arquivo só, no formato escolhido, com capítulos e capa."""
     fmt = formato(fmt)
+    if not ffmpeg_disponivel():
+        _juntar_mp3_sem_ffmpeg(saida, fmt, capitulos, ao_progresso)
+        return
     meta_path = os.path.join(cache_dir, "metadata.txt")
     _ffmetadata(meta_path, titulo, autor, genero, narrador, capitulos)
     concat_path = os.path.join(cache_dir, "concat.txt")
@@ -300,8 +317,33 @@ def gerar_arquivo_unico(saida: str, fmt: str, q: str, capitulos: List[Dict[str, 
         raise RuntimeError(f"FFmpeg falhou ao gerar {FORMATOS[fmt]['ext']}: {res.stderr[-300:]}")
 
 
+def _sem_ffmpeg_so_mp3(fmt: str, arquivos: List[str]) -> None:
+    if fmt not in ("single", "multiple"):
+        raise RuntimeError(f"FFmpeg não encontrado: ele é necessário para gerar {FORMATOS[fmt]['ext']}. "
+                           "Instale o FFmpeg ou escolha MP3.")
+    if any(not a.lower().endswith(".mp3") for a in arquivos):
+        raise RuntimeError("FFmpeg não encontrado: parte deste livro foi narrada antes com o FFmpeg instalado. "
+                           "Instale o FFmpeg de novo ou converta numa pasta nova.")
+
+
+def _juntar_mp3_sem_ffmpeg(saida: str, fmt: str, capitulos: List[Dict[str, Any]], ao_progresso=None) -> None:
+    """Sem FFmpeg, o MP3 sai juntando os capítulos como vieram da voz (mesmo formato em todos, então o
+    resultado é um MP3 válido). Capítulos e capa entram depois pelas tags ID3. Fica sem o ajuste de volume."""
+    _sem_ffmpeg_so_mp3(fmt, [c["file"] for c in capitulos])
+    with open(saida, "wb") as destino:
+        for n, ch in enumerate(capitulos, start=1):
+            with open(ch["file"], "rb") as origem:
+                shutil.copyfileobj(origem, destino)
+            if ao_progresso:
+                ao_progresso(n / len(capitulos))
+
+
 def codificar_capitulo(entrada: str, saida: str, fmt: str, q: str) -> None:
     """Um arquivo por capítulo: codifica o FLAC do cache no formato final."""
+    if not ffmpeg_disponivel():  # MP3 por capítulo sem FFmpeg: a voz como veio
+        _sem_ffmpeg_so_mp3(fmt, [entrada])
+        shutil.copyfile(entrada, saida)
+        return
     res = _rodar(["ffmpeg", "-y", "-i", entrada, "-map_metadata", "-1"] + argumentos_codec(fmt, q) + [saida])
     if res.returncode != 0:
         raise RuntimeError(f"FFmpeg falhou ao gerar o capítulo: {res.stderr[-300:]}")

@@ -129,8 +129,14 @@ _MOTOR_RE = [
 _FALHA_RE = re.compile(r"A conversão falhou na etapa de (.+?) \((\w+)\): (.*)", re.S)
 
 
-def do_motor(msg):
-    """Traduz uma mensagem do motor; o que não é conhecido passa como veio."""
+def do_motor(msg, codigo=None, args=None):
+    """Traduz uma mensagem do motor. Usa o código estável que o motor manda ("code" + "args"); sem código
+    (motor antigo), reconhece o texto em português. O que não é conhecido passa como veio."""
+    if codigo and (_textos.get(codigo) or _reserva.get(codigo)):
+        args = [str(a) for a in (args or [])]
+        if codigo == "err_stage" and args:
+            args[0] = t(args[0]) if args[0].startswith("stage_") else args[0]
+        return t(codigo, *args)
     if not msg:
         return msg
     msg = str(msg)

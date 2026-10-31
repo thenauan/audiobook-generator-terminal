@@ -24,12 +24,13 @@ import subprocess
 
 # O conversor roda fora do console do app (para o Ctrl+C não derrubá-lo). Sem console, cada programa que
 # ele abre (FFmpeg etc.) criaria uma janela própria na tela: no Windows, todos abrem sem janela.
+_CLASSE_PRIORIDADE = 0x00004000  # BELOW_NORMAL; IDLE (0x40) no modo leve, NORMAL (0x20) no turbo
 if os.name == "nt":
     _popen_init = subprocess.Popen.__init__
 
     def _popen_sem_janela(self, *args, **kwargs):
-        # CREATE_NO_WINDOW | BELOW_NORMAL_PRIORITY_CLASS: sem janela e sem disputar a CPU com o app
-        kwargs["creationflags"] = kwargs.get("creationflags", 0) | 0x08000000 | 0x00004000
+        # CREATE_NO_WINDOW + prioridade da conversão (abaixo do normal; mínima no modo leve)
+        kwargs["creationflags"] = kwargs.get("creationflags", 0) | 0x08000000 | _CLASSE_PRIORIDADE
         _popen_init(self, *args, **kwargs)
 
     subprocess.Popen.__init__ = _popen_sem_janela
@@ -63,6 +64,11 @@ _sem_traducao = None
 _ETAPA = {}
 _NOMES_ETAPA = {"translating": "tradução", "editing": "preparação do texto", "processing": "narração",
                 "syncing": "montagem do áudio e texto sincronizado"}
+# Códigos estáveis das etapas e mensagens: além do texto em português, cada evento leva "code" (e "args"
+# quando o texto tem valores; "unitCode" para partsUnit), para outras interfaces traduzirem sem depender do texto
+_CODIGOS_ETAPA = {"translating": "stage_translation", "editing": "stage_preparation", "processing": "stage_narration",
+                  "syncing": "stage_sync"}
+_ETAPA_COD = {}
 
 
 def emit(event):
@@ -70,6 +76,7 @@ def emit(event):
     fid = event.get("fileId")
     if fid and event.get("status") in _NOMES_ETAPA:
         _ETAPA[fid] = _NOMES_ETAPA[event["status"]]
+        _ETAPA_COD[fid] = _CODIGOS_ETAPA[event["status"]]
     if event.get("type") == "error" and fid and "details" not in event:
         event = {**event, "details": f"Etapa: {_ETAPA.get(fid, 'início')}"}
     print(json.dumps(event, ensure_ascii=False), flush=True)
@@ -253,11 +260,13 @@ async def _traduzir_bloco(bloco, alvo, ao_concluir):
                 await asyncio.sleep(espera)
                 espera = min(espera * 2, 60)
     limite = "TooManyRequests" in type(ultimo).__name__ or "too many" in str(ultimo).lower()
-    raise FalhaTraducao(
+    falha = FalhaTraducao(
         "O serviço de tradução do Google recusou os pedidos por excesso de uso. Espere alguns minutos e converta de novo "
         "(o que já foi traduzido fica guardado), ou converta sem traduzir."
         if limite else
         f"A tradução falhou ({type(ultimo).__name__}). Verifique a internet e converta de novo, ou converta sem traduzir.")
+    falha.codigo, falha.args_codigo = ("err_translation_limit", []) if limite else ("err_translation", [type(ultimo).__name__])
+    raise falha
 
 
 def _blocos_traducao(texto: str, limite: int = 3000):
@@ -282,7 +291,8 @@ async def traduzir_capitulos(caps, file_id, alvo):
     def ao_concluir():
         feitos["n"] += 1
         emit({"type": "progress", "fileId": file_id, "status": "translating", "progress": round(3 + min(1, feitos["n"] / total) * 12, 1),
-              "message": "Traduzindo o texto", "partsDone": min(feitos["n"], total), "partsTotal": total, "partsUnit": "trechos traduzidos"})
+              "message": "Traduzindo o texto", "code": "engine_translating", "partsDone": min(feitos["n"], total), "partsTotal": total,
+              "partsUnit": "trechos traduzidos", "unitCode": "unit_translated"})
 
     # Títulos: um pedido só (uma linha por título); se o tradutor juntar ou separar linhas, traduz um por um
     titulos = [c["titulo"].replace("\n", " ").strip() for c in caps]
@@ -482,8 +492,10 @@ async def _sintetizar_com_conexao(texto, voz, destino, ao_concluir, com_palavras
                         os.remove(parcial)
                     except OSError:
                         pass
-    raise FalhaSintese(f"O serviço de voz não respondeu depois de várias tentativas ({type(ultimo_erro).__name__}). "
-                       "Verifique a internet e converta de novo: o que já foi narrado fica salvo e a conversão continua de onde parou.")
+    falha = FalhaSintese(f"O serviço de voz não respondeu depois de várias tentativas ({type(ultimo_erro).__name__}). "
+                         "Verifique a internet e converta de novo: o que já foi narrado fica salvo e a conversão continua de onde parou.")
+    falha.codigo, falha.args_codigo = "err_tts", [type(ultimo_erro).__name__]
+    raise falha
 
 
 def _marcas_do_bloco(dados):
@@ -692,7 +704,8 @@ async def process_file(file_info, config):
 
         pasta_destino = _escolher(file_info, cfg, "outputFolder", "output_dir")
         if not pasta_destino:
-            emit({"type": "error", "fileId": file_id, "error": "Pasta de destino não definida. Escolha uma em Ajustes › Armazenamento e pastas."})
+            emit({"type": "error", "fileId": file_id, "error": "Pasta de destino não definida. Escolha uma em Ajustes › Armazenamento e pastas.",
+                  "code": "err_no_folder"})
             return
         voz = _escolher(file_info, cfg, "voice", padrao="pt-BR-AntonioNeural")
         idioma = idioma_da_voz(voz)
@@ -708,7 +721,7 @@ async def process_file(file_info, config):
         is_multiple = fmt_saida == "multiple"
         ext_saida = FORMATOS[fmt_saida]["ext"]
 
-        emit({"type": "progress", "fileId": file_id, "status": "processing", "progress": 1, "message": "Lendo o livro"})
+        emit({"type": "progress", "fileId": file_id, "status": "processing", "progress": 1, "message": "Lendo o livro", "code": "engine_reading"})
 
         # 1) Capítulos
         caps = []
@@ -721,23 +734,27 @@ async def process_file(file_info, config):
             try:
                 caps = await asyncio.to_thread(estruturar_livro, caminho, idioma)
             except LivroIlegivel as e:
-                emit({"type": "error", "fileId": file_id, "error": str(e)})
+                emit({"type": "error", "fileId": file_id, "error": str(e), "code": e.codigo, "args": e.args_codigo})
                 return
         if not caps:
-            emit({"type": "error", "fileId": file_id, "error": "Não foi possível ler o texto deste arquivo (ele pode estar protegido ou ser só imagens)."})
+            emit({"type": "error", "fileId": file_id, "error": "Não foi possível ler o texto deste arquivo (ele pode estar protegido ou ser só imagens).",
+                  "code": "err_unreadable"})
             return
 
         # 2) Tradução para o idioma da voz
         if file_info.get("translate"):
-            emit({"type": "progress", "fileId": file_id, "status": "translating", "progress": 3, "message": "Traduzindo o texto"})
+            emit({"type": "progress", "fileId": file_id, "status": "translating", "progress": 3, "message": "Traduzindo o texto",
+                  "code": "engine_translating"})
             caps = await traduzir_capitulos(caps, file_id, {"zh": "zh-CN"}.get(idioma, idioma))
 
         # 3) Texto do narrador (o texto sincronizado usa o texto sem esses ajustes)
         inicio_narracao = 15 if file_info.get("translate") else 3
-        emit({"type": "progress", "fileId": file_id, "status": "editing", "progress": inicio_narracao, "message": "Preparando o texto"})
+        emit({"type": "progress", "fileId": file_id, "status": "editing", "progress": inicio_narracao, "message": "Preparando o texto",
+              "code": "engine_preparing"})
         mapa = file_info.get("pronunciationMap") or file_info.get("pronunciation_map") or cfg.get("pronunciation_map") or []
         narracao = [(titulo_falado(c["titulo"]), preparar_para_narracao(c["conteudo"], voz, mapa)) for c in caps]
-        emit({"type": "progress", "fileId": file_id, "status": "editing", "progress": inicio_narracao, "message": "Preparando o texto"})
+        emit({"type": "progress", "fileId": file_id, "status": "editing", "progress": inicio_narracao, "message": "Preparando o texto",
+              "code": "engine_preparing"})
 
         # 4) Síntese
         pasta_destino = os.path.abspath(pasta_destino)
@@ -750,7 +767,8 @@ async def process_file(file_info, config):
             os.remove(teste)
         except OSError:
             emit({"type": "error", "fileId": file_id, "error": f"Não foi possível gravar na pasta de destino ({pasta_destino}). "
-                                                                "Verifique se ela existe (um HD externo pode ter sido desconectado) ou escolha outra em Ajustes › Armazenamento e pastas."})
+                                                                "Verifique se ela existe (um HD externo pode ter sido desconectado) ou escolha outra em Ajustes › Armazenamento e pastas.",
+                  "code": "err_write", "args": [pasta_destino]})
             return
         # Espaço em disco: áudio final + cache sem perda durante a conversão
         minutos = sum(len(x) for _, x in narracao) / 900
@@ -760,12 +778,16 @@ async def process_file(file_info, config):
             livre_mb = shutil.disk_usage(pasta_destino).free / (1024 * 1024)
             if livre_mb < precisa_mb:
                 emit({"type": "error", "fileId": file_id, "error": f"Espaço insuficiente na pasta de destino: são necessários cerca de "
-                                                                    f"{precisa_mb / 1024:.1f} GB e há {livre_mb / 1024:.1f} GB livres."})
+                                                                    f"{precisa_mb / 1024:.1f} GB e há {livre_mb / 1024:.1f} GB livres.",
+                      "code": "err_space", "args": [f"{precisa_mb / 1024:.1f}", f"{livre_mb / 1024:.1f}"]})
                 return
         except OSError:
             pass
         nome_base = re.sub(r'[\\/*?:\'"<>|]', "", titulo).strip() or "Audiobook"
-        cache_dir = os.path.join(pasta_destino, ".cache_audiobooks", re.sub(r'[\\/*?:\'"<>|]', "_", titulo).strip() or "audiobook")
+        # Pasta de trabalho: pelo título ou, se quem chamou mandar "cache_id" (ex.: um código do arquivo de origem),
+        # por ele — assim mudar o título não perde o que já foi narrado
+        nome_cache = str(file_info.get("cache_id") or titulo)
+        cache_dir = os.path.join(pasta_destino, ".cache_audiobooks", re.sub(r'[\\/*?:\'"<>|]', "_", nome_cache).strip() or "audiobook")
         os.makedirs(cache_dir, exist_ok=True)
         trava = os.path.join(cache_dir, ".convertendo")
         dono = _ler_json(trava, {}).get("pid") if os.path.exists(trava) else None
@@ -773,6 +795,7 @@ async def process_file(file_info, config):
             emit({"type": "error", "fileId": file_id,
                   "error": "Este livro já está sendo convertido em outra janela do app. Espere aquela conversão terminar "
                            "(ou cancele-a) antes de converter de novo.",
+                  "code": "err_busy",
                   "details": f"Pasta de trabalho: {cache_dir}\nProcesso que está convertendo: {dono}"})
             return
         _salvar_json(trava, {"pid": os.getpid()})
@@ -789,7 +812,8 @@ async def process_file(file_info, config):
         def emitir_volume():
             emit({"type": "progress", "fileId": file_id, "status": "processing",
                   "progress": round(teto + caps_prontos["n"] / n_caps * 10, 1), "message": "Ajustando o volume dos capítulos",
-                  "partsDone": caps_prontos["n"], "partsTotal": n_caps, "partsUnit": "capítulos com volume ajustado"})
+                  "code": "engine_volume", "partsDone": caps_prontos["n"], "partsTotal": n_caps,
+                  "partsUnit": "capítulos com volume ajustado", "unitCode": "unit_volume"})
 
         def progresso(n):
             feitos["n"] += n
@@ -798,7 +822,8 @@ async def process_file(file_info, config):
                 return
             emit({"type": "progress", "fileId": file_id, "status": "processing",
                   "progress": round(inicio_narracao + feitos["n"] / total * (teto - inicio_narracao), 1), "message": "Narrando",
-                  "partsDone": feitos["n"], "partsTotal": total, "partsUnit": "partes narradas"})
+                  "code": "engine_narrating", "partsDone": feitos["n"], "partsTotal": total,
+                  "partsUnit": "partes narradas", "unitCode": "unit_narrated"})
 
         def capitulo_pronto():
             caps_prontos["n"] += 1
@@ -806,7 +831,7 @@ async def process_file(file_info, config):
                 emitir_volume()
 
         emit({"type": "progress", "fileId": file_id, "status": "processing", "progress": inicio_narracao, "message": "Narrando",
-              "partsDone": 0, "partsTotal": total, "partsUnit": "partes narradas"})
+              "code": "engine_narrating", "partsDone": 0, "partsTotal": total, "partsUnit": "partes narradas", "unitCode": "unit_narrated"})
 
         async def medir_velocidade():
             """Velocidade real de download do áudio (média dos últimos segundos), enviada ao card."""
@@ -839,10 +864,13 @@ async def process_file(file_info, config):
         nome_formato = ext_saida.lstrip(".").upper()
 
         def progresso_final(fracao, feitos_saida=0, total_saida=None, unidade=None, rotulo=None):
+            # rotulo/unidade só são passados na saída por capítulo
             emit({"type": "progress", "fileId": file_id, "status": "processing", "progress": round(85 + fracao * 10, 1),
                   "message": rotulo or f"Montando o arquivo {nome_formato}",
+                  "code": "engine_chapter_files" if rotulo else "engine_building", "args": [] if rotulo else [nome_formato],
                   "partsDone": feitos_saida, "partsTotal": total_saida or len(caps),
-                  "partsUnit": unidade or f"capítulos no {nome_formato}"})
+                  "partsUnit": unidade or f"capítulos no {nome_formato}",
+                  "unitCode": "unit_chapter_files" if unidade else "unit_chapters_in", "unitArgs": [] if unidade else [nome_formato]})
 
         def progresso_montagem(fracao):
             # Quantos capítulos o FFmpeg já escreveu no arquivo final (pelo tempo já gerado)
@@ -899,7 +927,8 @@ async def process_file(file_info, config):
         # 6) Texto sincronizado: os tempos de cada frase vêm da própria síntese (sem transcrever o áudio)
         sync_text_info = None
         if gerar_sync:
-            emit({"type": "progress", "fileId": file_id, "status": "syncing", "progress": 95, "message": "Gerando o texto sincronizado"})
+            emit({"type": "progress", "fileId": file_id, "status": "syncing", "progress": 95, "message": "Gerando o texto sincronizado",
+                  "code": "engine_sync"})
             try:
                 from sync_text_tools import save_sync_text
                 destino_texto = _escolher(file_info, cfg, "sync_text_destination", padrao="both")
@@ -936,7 +965,8 @@ async def process_file(file_info, config):
                 sync_text_info = {"content": resultado["content"], "format": resultado["format"], "wordCount": resultado["wordCount"],
                                   "files": resultado.get("files") or [],
                                   "savedToLibrary": resultado["savedToLibrary"], "embedded": len(resultado["embedded"]) > 0}
-                emit({"type": "progress", "fileId": file_id, "status": "syncing", "progress": 99, "message": "Texto sincronizado pronto"})
+                emit({"type": "progress", "fileId": file_id, "status": "syncing", "progress": 99, "message": "Texto sincronizado pronto",
+                      "code": "engine_sync_done"})
             except Exception as se:
                 emit({"type": "log", "message": f"Aviso sincronização texto: {se}"})
 
@@ -957,7 +987,8 @@ async def process_file(file_info, config):
         if os.path.isdir(base_cache) and not os.listdir(base_cache):
             os.rmdir(base_cache)
     except (FalhaSintese, FalhaTraducao) as e:
-        emit({"type": "error", "fileId": file_id, "error": str(e), "details": _detalhes_erro(file_id, e)})
+        emit({"type": "error", "fileId": file_id, "error": str(e), "code": getattr(e, "codigo", None),
+              "args": getattr(e, "args_codigo", []), "details": _detalhes_erro(file_id, e)})
     except Exception as e:
         import traceback
         rastreio = traceback.format_exc()
@@ -965,6 +996,7 @@ async def process_file(file_info, config):
         etapa = _ETAPA.get(file_id, "início")
         emit({"type": "error", "fileId": file_id,
               "error": f"A conversão falhou na etapa de {etapa} ({type(e).__name__}): {e}",
+              "code": "err_stage", "args": [_ETAPA_COD.get(file_id, "stage_start"), type(e).__name__, str(e)],
               "details": _detalhes_erro(file_id, e, rastreio)})
 
 
@@ -979,13 +1011,33 @@ async def main():
             config = json.load(f)
     else:
         config = json.loads(arg)
+    global _vagas, TTS_CONEXOES, FFMPEG_PARALELO
+    leve = bool(config.get("lite"))
+    turbo = bool(config.get("turbo")) and not leve
+    if leve:
+        # Modo leve: um livro por vez, menos conexões de voz, um FFmpeg por vez e prioridade mínima.
+        # Converte mais devagar, mas o computador e o app ficam livres.
+        TTS_CONEXOES, FFMPEG_PARALELO = 4, 1
+        _prioridade_baixa(minima=True)
+    elif turbo:
+        # Modo turbo: mais conexões de voz, um FFmpeg por núcleo (até 8) e prioridade normal. Usa bem mais
+        # processador e memória; a transcrição por IA já usa a placa de vídeo (CUDA) quando existe.
+        TTS_CONEXOES, FFMPEG_PARALELO = 12, max(2, min(8, os.cpu_count() or 2))
+        _prioridade_baixa(normal=True)
     _sem_tts = asyncio.Semaphore(TTS_CONEXOES)
     _sem_ffmpeg = asyncio.Semaphore(FFMPEG_PARALELO)
-    global _vagas
     _vagas = asyncio.Condition()
-    _sem_traducao = asyncio.Semaphore(3)
+    _sem_traducao = asyncio.Semaphore(1 if leve else 6 if turbo else 3)
+    livros = config.get("files", [])
     try:
-        await asyncio.gather(*[process_file(f, config) for f in config.get("files", [])])
+        if leve:
+            for f in livros[1:]:
+                emit({"type": "progress", "fileId": f.get("id"), "progress": 0, "message": "Na fila (modo leve: um livro por vez)",
+                      "code": "queued_lite"})
+            for f in livros:
+                await process_file(f, config)
+        else:
+            await asyncio.gather(*[process_file(f, config) for f in livros])
     finally:
         for trava in _TRAVAS:
             try:
@@ -1027,15 +1079,19 @@ def _encerrar_se_o_app_fechar():
     threading.Thread(target=vigiar, daemon=True).start()
 
 
-def _prioridade_baixa():
+def _prioridade_baixa(minima=False, normal=False):
     """A conversão roda com prioridade abaixo do normal: o app (carregar livros, capas) e o resto do
-    computador continuam rápidos; a conversão usa a CPU que sobra, que costuma ser quase toda."""
+    computador continuam rápidos; a conversão usa a CPU que sobra, que costuma ser quase toda.
+    No modo leve, prioridade mínima (só usa a CPU que ninguém está usando), também para o FFmpeg; no modo
+    turbo, prioridade normal (disputa a CPU de igual para igual com os outros programas)."""
+    global _CLASSE_PRIORIDADE
     try:
         if os.name == "nt":
             import ctypes
-            ctypes.windll.kernel32.SetPriorityClass(ctypes.windll.kernel32.GetCurrentProcess(), 0x00004000)
+            _CLASSE_PRIORIDADE = 0x00000040 if minima else 0x00000020 if normal else 0x00004000
+            ctypes.windll.kernel32.SetPriorityClass(ctypes.windll.kernel32.GetCurrentProcess(), _CLASSE_PRIORIDADE)
         else:
-            os.nice(5)
+            os.nice(10 if minima else 0 if normal else 5)
     except Exception:
         pass
 

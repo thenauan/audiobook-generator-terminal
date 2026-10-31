@@ -303,7 +303,13 @@ def _ler_zip(z: zipfile.ZipFile, caminho: str) -> Optional[bytes]:
 
 
 class LivroIlegivel(ValueError):
-    """O arquivo não tem texto que dê para narrar (DRM, PDF escaneado, arquivo corrompido)."""
+    """O arquivo não tem texto que dê para narrar (DRM, PDF escaneado, arquivo corrompido).
+    `codigo` (e `args_codigo`) identificam o motivo sem depender do texto, para outras interfaces traduzirem."""
+
+    def __init__(self, mensagem, codigo=None, *args_codigo):
+        super().__init__(mensagem)
+        self.codigo = codigo
+        self.args_codigo = list(args_codigo)
 
 
 # Ofuscação de fontes é comum e inofensiva; qualquer outra cifra no EPUB é DRM
@@ -331,10 +337,10 @@ def ler_epub(caminho: str) -> Dict:
     try:
         zf = zipfile.ZipFile(caminho)
     except zipfile.BadZipFile:
-        raise LivroIlegivel("Este EPUB está corrompido ou incompleto (não é um arquivo ZIP válido).")
+        raise LivroIlegivel("Este EPUB está corrompido ou incompleto (não é um arquivo ZIP válido).", "err_epub_corrupt")
     with zf as z:
         if _tem_drm(z):
-            raise LivroIlegivel("Este EPUB tem proteção DRM e não pode ser lido. Use uma cópia sem proteção do livro.")
+            raise LivroIlegivel("Este EPUB tem proteção DRM e não pode ser lido. Use uma cópia sem proteção do livro.", "err_epub_drm")
         opf_path = None
         container = _ler_zip(z, "META-INF/container.xml")
         if container:
@@ -833,12 +839,13 @@ def _capitulos_pdf(caminho: str, idioma: str) -> List[Dict]:
     try:
         leitor = PdfReader(caminho)
     except Exception as e:
-        raise LivroIlegivel(f"Não foi possível abrir este PDF ({type(e).__name__}). O arquivo pode estar corrompido.")
+        raise LivroIlegivel(f"Não foi possível abrir este PDF ({type(e).__name__}). O arquivo pode estar corrompido.", "err_pdf_open",
+                            type(e).__name__)
     if leitor.is_encrypted:
         try:
             leitor.decrypt("")
         except Exception:
-            raise LivroIlegivel("Este PDF é protegido por senha. Remova a proteção antes de converter.")
+            raise LivroIlegivel("Este PDF é protegido por senha. Remova a proteção antes de converter.", "err_pdf_password")
     paginas = []
     for p in leitor.pages:
         try:
@@ -1103,7 +1110,7 @@ def estruturar_livro(caminho: str, idioma: str = "pt") -> List[Dict]:
         caps = _capitulos_pdf(caminho, idioma)
         if sum(len(c["conteudo"]) for c in caps) < 200:
             raise LivroIlegivel("Este PDF não tem texto selecionável (parece ser escaneado, só com imagens). "
-                                "Use uma versão com texto ou passe o PDF por um programa de OCR antes.")
+                                "Use uma versão com texto ou passe o PDF por um programa de OCR antes.", "err_pdf_scanned")
     elif ext in (".mobi", ".azw", ".azw3", ".prc"):
         caps = _capitulos_mobi(caminho, idioma)
     else:
