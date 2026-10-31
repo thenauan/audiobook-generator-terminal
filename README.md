@@ -123,6 +123,19 @@ Translations live in `dados/i18n/<language>.json` (English is the base and the f
 
 The cover comes from the e-book itself and chapters are detected automatically — there is no cover or advanced metadata editing, to keep things straight to the point.
 
+### Updates
+
+When you open the app, it checks GitHub for a new version in the background (it never slows the start, and with no internet it says nothing). If there is one, it shows **what's new** — translated into the interface language — and asks **"Update now?"**. The update runs right in the terminal, the right way for how you installed it:
+
+| Installed with | Update |
+|---|---|
+| pipx | `pipx upgrade audiobook-generator-terminal` |
+| pip | `pip install -U git+https://github.com/thenauan/audiobook-generator-terminal.git` |
+| git clone | `git pull` |
+| `.zip` / `.tar.gz` | downloads the new package and replaces the app files in its folder |
+
+On Windows, pip/pipx updates run in a new window right after the app closes (Windows doesn't allow replacing a running program). To skip the check: `--no-update-check` or `AUDIOBOOK_NO_UPDATE_CHECK=1`.
+
 ### Cancel and resume later
 
 During conversion, **Ctrl+C** pauses the progress panel and asks whether to cancel:

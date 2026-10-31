@@ -167,5 +167,15 @@
  "err_pdf_open": "无法打开此 PDF（{0}）。文件可能已损坏。",
  "err_pdf_password": "此 PDF 受密码保护。请先移除保护再转换。",
  "err_pdf_scanned": "此 PDF 没有可选择的文本（看起来是扫描件，只有图片）。请使用带文本的版本，或先用 OCR 程序处理。",
- "queued_lite": "排队中（轻量模式：一次一本书）"
+ "queued_lite": "排队中（轻量模式：一次一本书）",
+ "update_available": "有新版本：{new}（当前为 {current}）",
+ "update_whats_new": "新功能：",
+ "update_download_page": "下载和完整说明：{url}",
+ "update_q": "现在更新？",
+ "update_later": "以后更新：{command}",
+ "updating": "正在更新……",
+ "update_done": "已更新到 {version}。请重新打开 Audiobook Generator 使用。",
+ "update_windows_window": "更新将在新窗口中继续。完成后请重新打开 Audiobook Generator。",
+ "update_failed": "更新失败。请手动更新：",
+ "cli_no_update_help": "启动时不检查新版本"
 }

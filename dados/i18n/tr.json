@@ -167,5 +167,15 @@
  "err_pdf_open": "Bu PDF açılamadı ({0}). Dosya bozuk olabilir.",
  "err_pdf_password": "Bu PDF parola korumalı. Dönüştürmeden önce korumayı kaldırın.",
  "err_pdf_scanned": "Bu PDF'te seçilebilir metin yok (taranmış gibi, yalnızca görüntü). Metinli bir sürüm kullanın veya PDF'i önce bir OCR programından geçirin.",
- "queued_lite": "Sırada (hafif mod: her seferinde bir kitap)"
+ "queued_lite": "Sırada (hafif mod: her seferinde bir kitap)",
+ "update_available": "Yeni sürüm var: {new} (sizdeki {current})",
+ "update_whats_new": "Yenilikler:",
+ "update_download_page": "İndirmeler ve tüm notlar: {url}",
+ "update_q": "Şimdi güncellensin mi?",
+ "update_later": "Daha sonra güncellemek için: {command}",
+ "updating": "Güncelleniyor...",
+ "update_done": "{version} sürümüne güncellendi. Kullanmak için Audiobook Generator'ı yeniden açın.",
+ "update_windows_window": "Güncelleme yeni bir pencerede devam ediyor. Bittiğinde Audiobook Generator'ı yeniden açın.",
+ "update_failed": "Güncelleme başarısız oldu. Elle güncelleyin:",
+ "cli_no_update_help": "açılışta yeni sürüm denetleme"
 }

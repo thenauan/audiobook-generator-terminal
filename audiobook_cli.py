@@ -33,11 +33,12 @@ sys.path.insert(0, BASE)  # instalado com pip/pipx, os módulos ao lado (ui, i18
 MOTOR = os.path.join(BASE, "motor")
 sys.path.insert(1, MOTOR)
 
+import atualizacao  # noqa: E402
 import i18n  # noqa: E402
 import ui  # noqa: E402
 from i18n import t  # noqa: E402
 
-VERSAO = "1.4.0"
+VERSAO = "1.5.0"
 
 EXTENSOES = (".epub", ".pdf", ".mobi", ".azw", ".azw3", ".prc", ".txt")
 TOTAL_ETAPAS = 6
@@ -724,13 +725,52 @@ def _argumentos():
     modo = parser.add_mutually_exclusive_group()
     modo.add_argument("--lite", dest="modo", action="store_const", const="lite", help=t("cli_lite_help"))
     modo.add_argument("--turbo", dest="modo", action="store_const", const="turbo", help=t("cli_turbo_help"))
+    parser.add_argument("--no-update-check", action="store_true", help=t("cli_no_update_help"))
     parser.add_argument("--version", action="version", version=f"Audiobook Generator (terminal) {VERSAO}")
     return parser.parse_args()
+
+
+def avisar_atualizacao(verificacao, sem_perguntas):
+    """Versão nova no GitHub: mostra o que mudou e oferece atualizar pelo terminal.
+    Devolve True quando atualizou (o app fecha para abrir de novo já na versão nova)."""
+    release = verificacao.resultado() if verificacao else None
+    if not release:
+        return False
+    nova = str(release.get("tag_name", "")).lstrip("v")
+    tipo = atualizacao.tipo_de_instalacao()
+    print()
+    ui.alerta(t("update_available", new=nova, current=VERSAO))
+    itens = atualizacao.traduzir(atualizacao.novidades(release), i18n.atual)
+    if itens:
+        ui.info(t("update_whats_new"))
+        for item in itens:
+            linhas = ui.quebrar(item, max(30, ui.largura() - 10))
+            print("    " + ui.destaque(ui.ICONE["item"]) + " " + linhas[0])
+            for linha in linhas[1:]:
+                print("      " + linha)
+    ui.dica(t("update_download_page", url=release.get("html_url") or atualizacao.PAGINA))
+    depois = t("update_later", command=atualizacao.comando_texto(tipo))
+    if sem_perguntas or not sys.stdin.isatty() or not ui.sim_nao(t("update_q"), padrao=True):
+        ui.dica(depois)
+        return False
+    ui.dica(t("updating"))
+    resultado = atualizacao.atualizar(release, tipo)
+    if resultado == "ok":
+        ui.ok(t("update_done", version=nova))
+        return True
+    if resultado == "janela":
+        ui.ok(t("update_windows_window"))
+        return True
+    ui.falha(t("update_failed"))
+    ui.dica("  " + atualizacao.comando_texto(tipo))
+    return False
 
 
 def main():
     i18n.configurar(_idioma_pedido(sys.argv[1:]))
     args = _argumentos()
+    # A consulta à última versão começa já, em segundo plano, e é lida depois do banner
+    verificacao = None if atualizacao.desligada(args.no_update_check) else atualizacao.Verificacao(VERSAO)
     config = ler_config()
     sem_perguntas = args.yes
     if args.voice and not any(v["c"] == args.voice for v in VOZES):
@@ -738,6 +778,8 @@ def main():
         return 1
 
     ui.banner("Audiobook Generator", VERSAO, t("app_tagline"))
+    if avisar_atualizacao(verificacao, sem_perguntas):
+        return 0
     tem_ffmpeg = verificar_dependencias()
 
     # 1) Livros

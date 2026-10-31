@@ -75,6 +75,27 @@ def visivel(t):
     return sum(2 if unicodedata.east_asian_width(c) in ("W", "F") else 0 if unicodedata.combining(c) else 1 for c in limpo)
 
 
+def quebrar(texto, n):
+    """Quebra o texto em linhas de até n colunas na tela (por palavras; ideogramas, que não têm espaço, por caractere)."""
+    import re
+    linhas, atual = [], ""
+    for pedaco in re.findall(r"\S+\s*", str(texto)):
+        if visivel(atual + pedaco.rstrip()) <= n:
+            atual += pedaco
+            continue
+        if atual.strip():
+            linhas.append(atual.rstrip())
+        atual = ""
+        for c in pedaco:  # pedaço maior que a linha (frase em chinês): quebra onde couber
+            if visivel(atual + c) > n:
+                linhas.append(atual.rstrip())
+                atual = ""
+            atual += c
+    if atual.strip():
+        linhas.append(atual.rstrip())
+    return linhas or [""]
+
+
 def cortar(t, n):
     t = str(t)
     if visivel(t) <= n:

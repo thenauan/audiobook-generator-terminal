@@ -167,5 +167,15 @@
  "err_pdf_open": "Could not open this PDF ({0}). The file may be corrupted.",
  "err_pdf_password": "This PDF is password-protected. Remove the protection before converting.",
  "err_pdf_scanned": "This PDF has no selectable text (it looks scanned, images only). Use a version with text or run the PDF through an OCR program first.",
- "queued_lite": "Queued (lite mode: one book at a time)"
+ "queued_lite": "Queued (lite mode: one book at a time)",
+ "update_available": "New version available: {new} (you have {current})",
+ "update_whats_new": "What's new:",
+ "update_download_page": "Downloads and full notes: {url}",
+ "update_q": "Update now?",
+ "update_later": "To update later: {command}",
+ "updating": "Updating...",
+ "update_done": "Updated to {version}. Open Audiobook Generator again to use it.",
+ "update_windows_window": "The update continues in a new window. When it finishes, open Audiobook Generator again.",
+ "update_failed": "The update didn't work. Update manually:",
+ "cli_no_update_help": "don't check for a new version when starting"
 }

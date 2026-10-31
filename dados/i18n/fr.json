@@ -167,5 +167,15 @@
  "err_pdf_open": "Impossible d'ouvrir ce PDF ({0}). Le fichier est peut-être corrompu.",
  "err_pdf_password": "Ce PDF est protégé par un mot de passe. Retirez la protection avant de convertir.",
  "err_pdf_scanned": "Ce PDF n'a pas de texte sélectionnable (il semble numérisé, images uniquement). Utilisez une version avec du texte ou passez d'abord le PDF dans un logiciel d'OCR.",
- "queued_lite": "En attente (mode léger : un livre à la fois)"
+ "queued_lite": "En attente (mode léger : un livre à la fois)",
+ "update_available": "Nouvelle version disponible : {new} (vous avez la {current})",
+ "update_whats_new": "Nouveautés :",
+ "update_download_page": "Téléchargements et notes complètes : {url}",
+ "update_q": "Mettre à jour maintenant ?",
+ "update_later": "Pour mettre à jour plus tard : {command}",
+ "updating": "Mise à jour...",
+ "update_done": "Mis à jour vers la {version}. Rouvrez Audiobook Generator pour l'utiliser.",
+ "update_windows_window": "La mise à jour continue dans une nouvelle fenêtre. Quand elle est terminée, rouvrez Audiobook Generator.",
+ "update_failed": "La mise à jour a échoué. Mettez à jour manuellement :",
+ "cli_no_update_help": "ne pas chercher de nouvelle version au démarrage"
 }

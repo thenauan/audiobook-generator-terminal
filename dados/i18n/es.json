@@ -167,5 +167,15 @@
  "err_pdf_open": "No se pudo abrir este PDF ({0}). El archivo puede estar dañado.",
  "err_pdf_password": "Este PDF está protegido con contraseña. Quita la protección antes de convertir.",
  "err_pdf_scanned": "Este PDF no tiene texto seleccionable (parece escaneado, solo imágenes). Usa una versión con texto o pasa el PDF por un programa de OCR antes.",
- "queued_lite": "En cola (modo ligero: un libro a la vez)"
+ "queued_lite": "En cola (modo ligero: un libro a la vez)",
+ "update_available": "Nueva versión disponible: {new} (tienes la {current})",
+ "update_whats_new": "Novedades:",
+ "update_download_page": "Descargas y notas completas: {url}",
+ "update_q": "¿Actualizar ahora?",
+ "update_later": "Para actualizar después: {command}",
+ "updating": "Actualizando...",
+ "update_done": "Actualizado a la {version}. Vuelve a abrir Audiobook Generator para usarla.",
+ "update_windows_window": "La actualización sigue en una ventana nueva. Cuando termine, vuelve a abrir Audiobook Generator.",
+ "update_failed": "La actualización no funcionó. Actualiza manualmente:",
+ "cli_no_update_help": "no buscar una versión nueva al abrir"
 }
