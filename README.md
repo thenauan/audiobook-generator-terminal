@@ -2,14 +2,14 @@
 
 Converts e-books (**EPUB, PDF, MOBI, AZW3, TXT**) into audiobooks (**M4B, MP3, Opus, FLAC, WAV**) right from the terminal — on **Windows, macOS and Linux** — using the **same conversion engine** as [Audiobook Generator](https://github.com/thenauan/audiobook-generator): chapters, cover art, Microsoft neural voices (313 voices, 73 languages), translation and synced text for audiobook players.
 
-> The app's interface is in Portuguese.
+The interface speaks **English, Spanish, Portuguese, Russian, Arabic, French, Italian, Turkish, Hindi, Chinese and Urdu** and starts in your system language (English if your language isn't on the list).
 
 ```
-  ◆ Etapa 6/6  🚀  Convertendo
+  ◆ Step 6/6  🚀  Converting
   ─────────────────────────────────────────────────────────────────────────────
-  ✔ Dom Casmurro               Concluído
-  ● O Alienista                ━━━━━━━━━━━━━━━━━━━━━━━━  42.5%  Narrando · 3m 10s · 14/32 partes
-  ● Memórias Póstumas de Br…   ━━━━━━━━━━━━━━━━━━━━━━━━   0.0%  Na fila · calculando
+  ✔ Dom Casmurro               Done
+  ● O Alienista                ━━━━━━━━━━━━━━━━━━━━━━━━  42.5%  Narrating · 3m 10s · 14/32 parts narrated
+  ● Memórias Póstumas de Br…   ━━━━━━━━━━━━━━━━━━━━━━━━   0.0%  Queued · calculating
 ```
 
 ## Download
@@ -54,6 +54,17 @@ You can also pass the books and the output folder on the command line:
 python audiobook_cli.py book.epub other.pdf -o "C:\Audiobooks"   # Windows
 ```
 
+### Interface language
+
+The language is detected from the system (Windows display language, macOS preferred languages, or `LANGUAGE` / `LC_ALL` / `LANG` on Linux). To choose it yourself:
+
+```bash
+./audiobook-cli.sh --lang es          # or: AUDIOBOOK_LANG=es ./audiobook-cli.sh
+python audiobook_cli.py --lang zh     # en, es, pt, ru, ar, fr, it, tr, hi, zh, ur
+```
+
+Translations live in `dados/i18n/<language>.json` (English is the base and the fallback for any missing text).
+
 > **macOS:** the first time, Gatekeeper may block the `.command` file downloaded from the internet. Right-click → **Open**, or run `xattr -d com.apple.quarantine *.command *.sh` in the folder.
 > If you get *permission denied*, run `chmod +x audiobook-cli.sh "Audiobook Generator (terminal).command"`.
 
@@ -62,7 +73,7 @@ python audiobook_cli.py book.epub other.pdf -o "C:\Audiobooks"   # Windows
 | Step | What happens |
 |---|---|
 | 1. E-books | Opens the file picker (or uses the files from the command line, or files dragged into the terminal). Title, author, genre, subgenre, year, language and chapters are read automatically. |
-| 2. Each book | Shows what was detected and asks whether you want to edit it. Then: **translate** (to Portuguese, English, Spanish, Arabic or Russian), **synced text** (yes/no) and **voice** (`o 3` plays voice 3 reading an excerpt of the book itself). The choices can be reused for the other books in the same language. |
+| 2. Each book | Shows what was detected and asks whether you want to edit it. Then: **translate** (to any of the 11 interface languages), **synced text** (yes/no) and **voice** (`o 3` plays voice 3 reading an excerpt of the book itself). The choices can be reused for the other books in the same language. |
 | 3. Format | M4B (default), MP3, MP3 per chapter, Opus, FLAC or WAV. |
 | 4. Folder | Opens the folder picker (default: `Documents/Audiobook Generator`). |
 | 5. Summary | Review everything before starting. |
@@ -75,7 +86,7 @@ The cover comes from the e-book itself and chapters are detected automatically �
 During conversion, **Ctrl+C** pauses the progress panel and asks whether to cancel:
 
 - **n** (or Enter) — the conversion continues where it was;
-- **s** — cancels and stops the engine and FFmpeg (no processes are left running);
+- **y** — cancels and stops the engine and FFmpeg (no processes are left running);
 - **Ctrl+C again** — confirms the cancellation.
 
 Everything already narrated is kept in `.cache_audiobooks` inside the output folder: convert the same book again, with the same voice and folder, and it resumes where it stopped.
@@ -105,4 +116,11 @@ The engine (`motor/`) is a copy of the app's engine. After changing the app, upd
 
 ```bash
 python atualizar_motor.py [path-to-the-app]
+```
+
+Language and region names in every interface language (`dados/idiomas.json`) are generated from CLDR — only needed when the voice catalog changes:
+
+```bash
+python -m pip install babel
+python gerar_idiomas.py
 ```

@@ -1,11 +1,13 @@
 """
 Audiobook Generator para o terminal: converte e-books (EPUB, PDF, MOBI, AZW3, TXT) em audiobooks (M4B, MP3...)
-com o mesmo motor de conversão do app, sem interface gráfica.
+com o mesmo motor de conversão do app, sem interface gráfica. A interface abre no idioma do sistema
+(inglês, se ele não estiver entre os idiomas de dados/i18n).
 
 Uso:
     python audiobook_cli.py                       abre o seletor de arquivos
     python audiobook_cli.py livro.epub outro.pdf  já começa com esses livros
     python audiobook_cli.py livro.epub -o "C:\\Audiobooks"
+    python audiobook_cli.py --lang pt             interface em português
 """
 import argparse
 import asyncio
@@ -23,9 +25,11 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 
+import i18n
 import ui
+from i18n import t
 
-VERSAO = "1.2.0"
+VERSAO = "1.3.0"
 BASE = os.path.dirname(os.path.abspath(__file__))
 MOTOR = os.path.join(BASE, "motor")
 sys.path.insert(0, MOTOR)
@@ -33,33 +37,40 @@ sys.path.insert(0, MOTOR)
 EXTENSOES = (".epub", ".pdf", ".mobi", ".azw", ".azw3", ".prc", ".txt")
 TOTAL_ETAPAS = 6
 
-# Idiomas para os quais dá para traduzir (os da interface do app, todos com vozes)
-DESTINOS_TRADUCAO = ["pt", "en", "es", "ar", "ru"]
+# Idiomas para os quais dá para traduzir (os da interface, todos com vozes; o motor traduz para o idioma da voz)
+DESTINOS_TRADUCAO = i18n.IDIOMAS
 # Voz sugerida por idioma (a primeira da lista quando o idioma não está aqui)
 VOZ_PREFERIDA = {"pt": "pt-BR-AntonioNeural", "en": "en-US-AndrewNeural", "es": "es-ES-AlvaroNeural",
                  "ar": "ar-SA-HamedNeural", "ru": "ru-RU-SvetlanaNeural", "fr": "fr-FR-HenriNeural",
-                 "de": "de-DE-ConradNeural", "it": "it-IT-DiegoNeural"}
-LOCALE_PREFERIDO = {"pt": "pt-BR", "en": "en-US", "es": "es-ES", "ar": "ar-SA", "zh": "zh-CN", "fr": "fr-FR"}
+                 "de": "de-DE-ConradNeural", "it": "it-IT-DiegoNeural", "tr": "tr-TR-AhmetNeural",
+                 "hi": "hi-IN-MadhurNeural", "zh": "zh-CN-YunxiNeural", "ur": "ur-PK-AsadNeural"}
+LOCALE_PREFERIDO = {"pt": "pt-BR", "en": "en-US", "es": "es-ES", "ar": "ar-SA", "zh": "zh-CN", "fr": "fr-FR",
+                    "it": "it-IT", "ru": "ru-RU", "tr": "tr-TR", "hi": "hi-IN", "ur": "ur-PK", "de": "de-DE"}
 FRASE_AMOSTRA = {
     "pt": "Olá! Esta é a minha voz. Que tal ouvirmos juntos uma boa história?",
     "en": "Hello! This is my voice. Shall we listen to a good story together?",
     "es": "¡Hola! Esta es mi voz. ¿Escuchamos juntos una buena historia?",
     "ar": "مرحبًا! هذا هو صوتي. هل نستمع معًا إلى قصة جميلة؟",
     "ru": "Привет! Это мой голос. Давайте послушаем хорошую историю вместе.",
+    "fr": "Bonjour ! Voici ma voix. Et si nous écoutions ensemble une belle histoire ?",
+    "it": "Ciao! Questa è la mia voce. Ascoltiamo insieme una bella storia?",
+    "tr": "Merhaba! Bu benim sesim. Birlikte güzel bir hikâye dinleyelim mi?",
+    "hi": "नमस्ते! यह मेरी आवाज़ है। क्या हम साथ में एक अच्छी कहानी सुनें?",
+    "zh": "你好！这是我的声音。我们一起听一个好故事吧？",
+    "ur": "السلام علیکم! یہ میری آواز ہے۔ کیا ہم مل کر ایک اچھی کہانی سنیں؟",
+    "de": "Hallo! Das ist meine Stimme. Wollen wir zusammen eine gute Geschichte hören?",
 }
-FORMATOS = [("m4b", "Audiobook M4B", "um arquivo com capítulos e capa — o padrão dos apps de audiobook"),
-            ("single", "MP3", "um arquivo com capítulos e capa, toca em qualquer aparelho"),
-            ("multiple", "MP3 por capítulo", "uma faixa por capítulo, numa pasta"),
-            ("opus", "Opus", "o menor arquivo pela mesma qualidade"),
-            ("flac", "FLAC", "sem perda de qualidade (arquivo maior)"),
-            ("wav", "WAV", "sem compressão, para edição (sem capítulos nem capa)")]
+# (formato do motor, chave do nome, chave da descrição); o nome sem chave de tradução é o próprio formato
+FORMATOS = [("m4b", "fmt_m4b_name", "fmt_m4b_desc"), ("single", "fmt_mp3_name", "fmt_mp3_desc"),
+            ("multiple", "fmt_multi_name", "fmt_multi_desc"), ("opus", "Opus", "fmt_opus_desc"),
+            ("flac", "FLAC", "fmt_flac_desc"), ("wav", "WAV", "fmt_wav_desc")]
 
 with open(os.path.join(BASE, "dados", "vozes.json"), encoding="utf-8") as f:
     VOZES = json.load(f)  # [{c: ShortName, l: Locale, g: F|M}]
 with open(os.path.join(BASE, "dados", "idiomas.json"), encoding="utf-8") as f:
     _DADOS_IDIOMAS = json.load(f)
-IDIOMAS = _DADOS_IDIOMAS["idiomas"]   # código -> {pt, nativo}
-REGIOES = _DADOS_IDIOMAS["regioes"]   # BR -> Brasil
+IDIOMAS = _DADOS_IDIOMAS["idiomas"]   # código -> {nativo, en, pt, es...}
+REGIOES = _DADOS_IDIOMAS["regioes"]   # BR -> {en: Brazil, pt: Brasil...}
 
 
 # ---------------------------------------------------------------------------------------------
@@ -72,12 +83,12 @@ def _sem_acento(t):
 
 _POR_NOME = {}
 for _cod, _n in IDIOMAS.items():
-    for _nome in (_n["pt"], _n["nativo"]):
+    for _nome in _n.values():
         _POR_NOME.setdefault(_sem_acento(_nome), _cod)
 
 
 def codigo_idioma(nome):
-    """'Português (Brasil)', 'Inglês', 'Grego', 'el', 'sv-SE' -> código de duas letras ('' se não reconhecer)."""
+    """'Português (Brasil)', 'English', 'Grego', 'el', 'sv-SE' -> código de duas letras ('' se não reconhecer)."""
     n = _sem_acento(re.sub(r"\s*\(.*\)$", "", str(nome or "")))
     if not n:
         return ""
@@ -88,14 +99,27 @@ def codigo_idioma(nome):
 
 
 def nome_idioma(codigo):
-    return IDIOMAS.get(codigo, {}).get("pt", codigo or "desconhecido")
+    """Nome do idioma na língua da interface ('Portuguese', 'Português', 'Португальский'...)."""
+    n = IDIOMAS.get(codigo, {})
+    return n.get(i18n.atual) or n.get("nativo") or codigo or "?"
+
+
+def nome_idioma_frase(codigo):
+    """Nome do idioma no meio de uma frase: minúsculo nas línguas em que é assim ('narrar em português')."""
+    nome = nome_idioma(codigo)
+    return nome.lower() if i18n.atual in ("pt", "es", "fr", "it", "ru") else nome
+
+
+def nome_regiao(regiao):
+    n = REGIOES.get(regiao)
+    return (n.get(i18n.atual) or n.get("en") or regiao) if isinstance(n, dict) else (n or regiao)
 
 
 def nome_voz(v):
-    nome = v["c"][len(v["l"]) + 1:].replace("Neural", "").replace("Multilingual", " (multilíngue)").strip()
+    nome = v["c"][len(v["l"]) + 1:].replace("Neural", "").replace("Multilingual", f" ({t('multilingual')})").strip()
     regiao = next((p for p in v["l"].split("-") if re.fullmatch(r"[A-Z]{2}", p)), "")
-    genero = "feminina" if v["g"] == "F" else "masculina"
-    onde = REGIOES.get(regiao, regiao)
+    genero = t("female") if v["g"] == "F" else t("male")
+    onde = nome_regiao(regiao) if regiao else ""
     return nome, f"{genero} · {nome_idioma(v['l'].split('-')[0])}" + (f" ({onde})" if onde else "")
 
 
@@ -123,18 +147,18 @@ def _tk():
 def escolher_arquivos():
     raiz, dialogo = _tk()
     if raiz:
-        ui.dica("Abrindo o seletor de arquivos... (ele pode abrir atrás desta janela)")
+        ui.dica(t("opening_file_picker"))
         caminhos = dialogo.askopenfilenames(
-            parent=raiz, title="Escolha os e-books para converter",
-            filetypes=[("E-books", " ".join(f"*{e}" for e in EXTENSOES)), ("Todos os arquivos", "*.*")])
+            parent=raiz, title=t("file_picker_title"),
+            filetypes=[(t("filetype_ebooks"), " ".join(f"*{e}" for e in EXTENSOES)), (t("filetype_all"), "*.*")])
         raiz.destroy()
         if caminhos:
             return list(caminhos)
-        ui.alerta("Nenhum arquivo escolhido no seletor.")
-    ui.dica("Digite ou arraste os arquivos para cá (um ou vários por linha). Linha vazia termina.")
+        ui.alerta(t("no_file_chosen"))
+    ui.dica(t("type_or_drag"))
     caminhos = []
     while True:
-        linha = ui.perguntar("Arquivo").strip()
+        linha = ui.perguntar(t("prompt_file")).strip()
         if not linha:
             return caminhos
         caminhos.extend(caminhos_digitados(linha))
@@ -176,15 +200,15 @@ def escolher_pasta():
     padrao = pasta_padrao()
     raiz, dialogo = _tk()
     if raiz:
-        ui.dica("Abrindo o seletor de pastas... (ele pode abrir atrás desta janela)")
+        ui.dica(t("opening_folder_picker"))
         os.makedirs(padrao, exist_ok=True)
-        pasta = dialogo.askdirectory(parent=raiz, title="Onde salvar os audiobooks", initialdir=padrao, mustexist=False)
+        pasta = dialogo.askdirectory(parent=raiz, title=t("folder_picker_title"), initialdir=padrao, mustexist=False)
         raiz.destroy()
         if pasta:
             return os.path.normpath(pasta)
-        ui.dica(f"Nenhuma pasta escolhida: usando a pasta padrão.")
+        ui.dica(t("no_folder_chosen"))
         return padrao
-    pasta = ui.perguntar("Pasta onde salvar", padrao)
+    pasta = ui.perguntar(t("prompt_folder"), padrao)
     return os.path.normpath((caminhos_digitados(pasta) or [padrao])[0])
 
 
@@ -197,7 +221,7 @@ def abrir(caminho):
         else:
             subprocess.Popen(["xdg-open", caminho], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception as e:
-        ui.alerta(f"Não foi possível abrir: {e}")
+        ui.alerta(t("cannot_open", error=e))
 
 
 # ---------------------------------------------------------------------------------------------
@@ -212,21 +236,21 @@ def verificar_dependencias():
         except Exception:
             faltando.append(pacote)
     if faltando:
-        ui.falha("Faltam bibliotecas do Python: " + ", ".join(faltando))
+        ui.falha(t("missing_libs", libs=", ".join(faltando)))
         python = "python" if os.name == "nt" else "python3"
-        ui.dica(f"Instale com:  {python} -m pip install -r requirements.txt")
+        ui.dica(t("install_with", command=f"{python} -m pip install -r requirements.txt"))
         sys.exit(1)
     if not shutil.which("ffmpeg"):
         # O motor usa o FFmpeg para juntar os capítulos e gerar o arquivo final, em todos os formatos
-        ui.falha("FFmpeg não encontrado: ele é necessário para gerar os audiobooks.")
+        ui.falha(t("ffmpeg_missing"))
         if os.name == "nt":
             comando = "winget install Gyan.FFmpeg"
         elif sys.platform == "darwin":
             comando = "brew install ffmpeg"
         else:
-            comando = "sudo apt install ffmpeg  (ou dnf / pacman, conforme a distribuição)"
-        ui.dica(f"Instale com:  {comando}")
-        ui.dica("Depois, abra um terminal novo e rode o Audiobook Generator de novo.")
+            comando = "sudo apt install ffmpeg  " + t("ffmpeg_linux_hint")
+        ui.dica(t("install_with", command=comando))
+        ui.dica(t("reopen_terminal"))
         sys.exit(1)
 
 
@@ -242,10 +266,10 @@ def ler_livros(caminhos):
         try:
             dados = extract_metadata(caminho, os.path.basename(caminho))
         except Exception as e:
-            dados = {"unreadable": f"não foi possível ler o arquivo ({e})"}
+            dados = {"unreadable": t("cannot_read_file", error=e)}
         with trava:
             prontos[0] += 1
-            sys.stdout.write(f"\r\033[2K  {ui.destaque(ui.ICONE['info'])} Lendo os livros... {prontos[0]}/{len(caminhos)}")
+            sys.stdout.write(f"\r\033[2K  {ui.destaque(ui.ICONE['info'])} " + t("reading_books", done=prontos[0], total=len(caminhos)))
             sys.stdout.flush()
         return caminho, dados
 
@@ -255,7 +279,7 @@ def ler_livros(caminhos):
     for caminho, d in resultados:
         nome = os.path.basename(caminho)
         if d.get("unreadable"):
-            ui.falha(f"{nome}: {d['unreadable']}")
+            ui.falha(f"{nome}: {i18n.do_motor(d['unreadable'])}")
             continue
         texto_inicio = ""
         for cap in d.get("chapters") or []:
@@ -263,14 +287,16 @@ def ler_livros(caminhos):
             if len(conteudo) > 200:
                 texto_inicio = conteudo
                 break
+        autor = d.get("author") or ""
         livros.append({
             "id": uuid.uuid4().hex[:10], "caminho": caminho, "arquivo": nome,
-            "titulo": d.get("title") or os.path.splitext(nome)[0], "autor": d.get("author") or "Desconhecido",
+            "titulo": d.get("title") or os.path.splitext(nome)[0],
+            "autor": t("unknown_author") if autor in ("", "Desconhecido") else autor,
             "genero": d.get("genre") or "", "subgenero": d.get("subgenre") or "", "ano": d.get("year") or "",
             "idioma": codigo_idioma(d.get("language")), "capitulos": len(d.get("chapters") or []),
             "duracao": d.get("durationEst") or "", "capa": d.get("cover"), "trecho": texto_inicio,
         })
-        ui.ok(f"{nome} {ui.suave('· ' + str(len(d.get('chapters') or [])) + ' capítulos')}")
+        ui.ok(f"{nome} {ui.suave('· ' + t('n_chapters', n=len(d.get('chapters') or [])))}")
     return livros
 
 
@@ -280,17 +306,17 @@ def ler_livros(caminhos):
 def tocar_amostra(voz, idioma, trecho=""):
     import edge_tts
     if trecho:
-        frase = re.split(r"(?<=[.!?…])\s", re.sub(r"\s+", " ", trecho))[:2]
+        frase = re.split(r"(?<=[.!?…。！？])\s*", re.sub(r"\s+", " ", trecho))[:2]
         frase = " ".join(frase)[:260]
     else:
         frase = FRASE_AMOSTRA.get(idioma, "1, 2, 3.")
     destino = os.path.join(tempfile.gettempdir(), f"amostra_{voz}.mp3")
-    ui.dica(f"{ui.ICONE['amostra']} Gerando a amostra de {voz}...")
+    ui.dica(f"{ui.ICONE['amostra']} " + t("generating_sample", voice=voz))
     try:
         asyncio.run(edge_tts.Communicate(frase, voz).save(destino))
         abrir(destino)
     except Exception as e:
-        ui.alerta(f"Não foi possível gerar a amostra ({type(e).__name__}). Verifique a internet.")
+        ui.alerta(t("sample_failed", error=type(e).__name__))
 
 
 # ---------------------------------------------------------------------------------------------
@@ -298,70 +324,72 @@ def tocar_amostra(voz, idioma, trecho=""):
 # ---------------------------------------------------------------------------------------------
 def revisar_informacoes(livro):
     ui.cartao(livro["titulo"], [
-        ("Autor", livro["autor"]), ("Gênero", livro["genero"]), ("Subgênero", livro["subgenero"]),
-        ("Ano", livro["ano"]), ("Idioma", nome_idioma(livro["idioma"]) if livro["idioma"] else "não reconhecido"),
-        ("Capítulos", str(livro["capitulos"])), ("Duração estimada", livro["duracao"]), ("Arquivo", livro["arquivo"]),
+        (t("field_author"), livro["autor"]), (t("field_genre"), livro["genero"]), (t("field_subgenre"), livro["subgenero"]),
+        (t("field_year"), livro["ano"]),
+        (t("field_language"), nome_idioma(livro["idioma"]) if livro["idioma"] else t("not_recognized")),
+        (t("field_chapters"), str(livro["capitulos"])), (t("field_duration"), livro["duracao"]), (t("field_file"), livro["arquivo"]),
     ])
-    if not ui.sim_nao("Editar as informações?", padrao=False):
+    if not ui.sim_nao(t("edit_details"), padrao=False):
         return
-    livro["titulo"] = ui.perguntar("Título", livro["titulo"])
-    livro["autor"] = ui.perguntar("Autor", livro["autor"])
-    livro["genero"] = ", ".join(g.strip() for g in ui.perguntar("Gêneros (separe por vírgula)", livro["genero"]).split(",") if g.strip())
-    livro["subgenero"] = ", ".join(g.strip() for g in ui.perguntar("Subgêneros (separe por vírgula)", livro["subgenero"]).split(",") if g.strip())
+    livro["titulo"] = ui.perguntar(t("field_title"), livro["titulo"])
+    livro["autor"] = ui.perguntar(t("field_author"), livro["autor"])
+    livro["genero"] = ", ".join(g.strip() for g in ui.perguntar(t("prompt_genres"), livro["genero"]).split(",") if g.strip())
+    livro["subgenero"] = ", ".join(g.strip() for g in ui.perguntar(t("prompt_subgenres"), livro["subgenero"]).split(",") if g.strip())
     while True:
-        ano = ui.perguntar("Ano", livro["ano"])
+        ano = ui.perguntar(t("field_year"), livro["ano"])
         if not ano or re.fullmatch(r"\d{4}", ano):
             livro["ano"] = ano
             break
-        ui.alerta("Use 4 dígitos, como 2024 (ou deixe em branco).")
+        ui.alerta(t("year_invalid"))
     while True:
-        idioma = ui.perguntar("Idioma do livro", nome_idioma(livro["idioma"]) if livro["idioma"] else "")
+        idioma = ui.perguntar(t("prompt_book_language"), nome_idioma(livro["idioma"]) if livro["idioma"] else "")
         codigo = codigo_idioma(idioma)
         if codigo or not idioma:
             livro["idioma"] = codigo
             break
-        ui.alerta("Idioma não reconhecido. Digite o nome (ex.: Francês, Grego) ou o código (ex.: fr, el).")
-    ui.ok("Informações atualizadas.")
+        ui.alerta(t("language_invalid"))
+    ui.ok(t("details_updated"))
 
 
 def escolher_traducao(livro):
     if not livro["idioma"]:
         return ""
     destinos = [c for c in DESTINOS_TRADUCAO if c != livro["idioma"]]
-    opcoes = [(f"Não traduzir", f"narrar em {nome_idioma(livro['idioma']).lower()}")] + \
-             [(f"Traduzir para {nome_idioma(c).lower()}", IDIOMAS[c]["nativo"]) for c in destinos]
+    opcoes = [(t("no_translation"), t("narrate_in", language=nome_idioma_frase(livro["idioma"])))] + \
+             [(t("translate_to", language=nome_idioma_frase(c)), IDIOMAS[c]["nativo"]) for c in destinos]
     print()
-    ui.info(f"{ui.ICONE['traduzir']} Tradução")
-    i = ui.escolher("Opção", opcoes, padrao=0)
+    ui.info(f"{ui.ICONE['traduzir']} " + t("translation"))
+    i = ui.escolher(t("prompt_option"), opcoes, padrao=0, colunas=1 if len(opcoes) <= 6 else 2)
     return "" if i == 0 else destinos[i - 1]
 
 
 def escolher_idioma_narracao():
     codigos = sorted(IDIOMAS, key=lambda c: _sem_acento(nome_idioma(c)))
-    ui.alerta("O idioma do livro não foi reconhecido. Escolha o idioma da narração:")
-    i = ui.escolher("Idioma", [(nome_idioma(c), "") for c in codigos], padrao=codigos.index("pt") if "pt" in codigos else 0, colunas=3)
+    ui.alerta(t("language_unknown_choose"))
+    padrao = codigos.index(i18n.atual) if i18n.atual in codigos else 0
+    i = ui.escolher(t("prompt_language"), [(nome_idioma(c), "") for c in codigos], padrao=padrao, colunas=3)
     return codigos[i]
 
 
 def escolher_voz(idioma, trecho, sugerida=None):
     vozes = vozes_do_idioma(idioma)
     if not vozes:
-        ui.alerta(f"Não há vozes para {nome_idioma(idioma).lower()}. Escolha outro idioma de narração.")
+        ui.alerta(t("no_voices", language=nome_idioma_frase(idioma)))
         return escolher_voz(escolher_idioma_narracao(), "", None)
     codigos = [v["c"] for v in vozes]
     padrao = codigos.index(sugerida) if sugerida in codigos else (codigos.index(VOZ_PREFERIDA[idioma]) if VOZ_PREFERIDA.get(idioma) in codigos else 0)
     print()
-    ui.info(f"{ui.ICONE['voz']} Voz da narração em {nome_idioma(idioma).lower()} {ui.suave(f'({len(vozes)} vozes)')}")
+    ui.info(f"{ui.ICONE['voz']} " + t("voice_heading", language=nome_idioma_frase(idioma)) + " " + ui.suave(t("n_voices", n=len(vozes))))
     opcoes = [nome_voz(v) for v in vozes]
     while True:
-        r = ui.escolher("Voz", opcoes, padrao=padrao, extras={"o": "<n>  ouvir a voz n"}, colunas=1 if len(vozes) <= 12 else 2)
+        r = ui.escolher(t("prompt_voice"), opcoes, padrao=padrao, extras={"o": t("listen_hint")}, colunas=1 if len(vozes) <= 12 else 2)
         if isinstance(r, tuple):
             n = r[1].strip() or str(padrao + 1)
             if n.isdigit() and 1 <= int(n) <= len(vozes):
                 tocar_amostra(codigos[int(n) - 1], idioma, trecho)
                 padrao = int(n) - 1
             else:
-                ui.alerta(f"Use o + número da voz, por exemplo: o {padrao + 1}")
+                ui.alerta(t("listen_usage", n=padrao + 1))
             continue
         return codigos[r]
 
@@ -370,35 +398,36 @@ def configurar_livros(livros):
     escolhas_por_idioma = {}  # idioma -> (traduzir, texto, voz), quando o usuário quer repetir
     for n, livro in enumerate(livros, 1):
         print()
-        ui.info(ui.negrito(f"Livro {n} de {len(livros)}"))
+        ui.info(ui.negrito(t("book_n_of", n=n, total=len(livros))))
         revisar_informacoes(livro)
         repetir = escolhas_por_idioma.get(livro["idioma"]) if livro["idioma"] else None
         if repetir:
             livro["traduzir"], livro["texto"], livro["voz"] = repetir
-            ui.ok(f"Usando as mesmas escolhas dos livros em {nome_idioma(livro['idioma']).lower()}: "
-                  f"{('traduzir para ' + nome_idioma(livro['traduzir']).lower()) if livro['traduzir'] else 'sem tradução'}, "
-                  f"{'com' if livro['texto'] else 'sem'} texto sincronizado, voz {nome_voz(next(v for v in VOZES if v['c'] == livro['voz']))[0]}")
+            ui.ok(t("reusing_choices", language=nome_idioma_frase(livro["idioma"]),
+                    translation=t("translate_to_lower", language=nome_idioma_frase(livro["traduzir"])) if livro["traduzir"] else t("without_translation"),
+                    sync=t("with_sync") if livro["texto"] else t("without_sync"),
+                    voice=nome_voz(next(v for v in VOZES if v["c"] == livro["voz"]))[0]))
             continue
         livro["traduzir"] = escolher_traducao(livro)
         print()
-        livro["texto"] = ui.sim_nao(f"{ui.ICONE['texto']} Gerar texto sincronizado para audiobook players?", padrao=True)
+        livro["texto"] = ui.sim_nao(f"{ui.ICONE['texto']} " + t("ask_sync"), padrao=True)
         idioma_narracao = livro["traduzir"] or livro["idioma"] or escolher_idioma_narracao()
         livro["voz"] = escolher_voz(idioma_narracao, "" if livro["traduzir"] else livro["trecho"])
         restantes = [l for l in livros[n:] if l["idioma"] == livro["idioma"]]
         if livro["idioma"] and restantes and ui.sim_nao(
-                f"Usar estas escolhas também nos outros {len(restantes)} livro(s) em {nome_idioma(livro['idioma']).lower()}?", padrao=True):
+                t("reuse_choices_q", n=len(restantes), language=nome_idioma_frase(livro["idioma"])), padrao=True):
             escolhas_por_idioma[livro["idioma"]] = (livro["traduzir"], livro["texto"], livro["voz"])
 
 
 def escolher_formato():
-    i = ui.escolher("Formato", [(r, d) for _, r, d in FORMATOS], padrao=0)
-    return FORMATOS[i][0], FORMATOS[i][1]
+    i = ui.escolher(t("prompt_format"), [(t(nome), t(desc)) for _, nome, desc in FORMATOS], padrao=0)
+    return FORMATOS[i][0], t(FORMATOS[i][1])
 
 
 # ---------------------------------------------------------------------------------------------
 # Conversão (o mesmo motor do app: converter.py, com os eventos de progresso em JSON)
 # ---------------------------------------------------------------------------------------------
-NOME_ETAPA = {"translating": "Traduzindo", "editing": "Preparando o texto", "syncing": "Texto sincronizado"}
+NOME_ETAPA = {"translating": "engine_translating", "editing": "engine_preparing", "syncing": "engine_sync"}
 
 
 def converter(livros, formato, pasta):
@@ -408,7 +437,8 @@ def converter(livros, formato, pasta):
         "files": [{
             "id": l["id"], "path": os.path.abspath(l["caminho"]), "filename": l["arquivo"], "title": l["titulo"],
             "author": l["autor"], "genre": l["genero"], "subgenre": l["subgenero"], "year": l["ano"],
-            "language": nome_idioma(l["idioma"]) if l["idioma"] else "", "voice": l["voz"],
+            # O motor recebe o nome do idioma em português, como no app
+            "language": IDIOMAS.get(l["idioma"], {}).get("pt", "") if l["idioma"] else "", "voice": l["voz"],
             "translate": bool(l["traduzir"]), "fileType": formato, "file_format": formato, "cover": l["capa"],
             "generic_cover": True,  # e-book sem capa: o motor gera a capa genérica do app
             "chapters": [], "generate_sync_text": l["texto"], "sync_text_destination": "both",
@@ -444,8 +474,9 @@ def converter(livros, formato, pasta):
             if tipo == "progress":
                 # Uma porcentagem só (todas as etapas embutidas); ao lado, a contagem da etapa atual
                 st = ev.get("status")
-                partes = f"{ev['partsDone']}/{ev['partsTotal']} {ev.get('partsUnit') or 'partes'}" if ev.get("partsTotal") else ""
-                etapa = (ev.get("message") or "").rstrip(".…") or NOME_ETAPA.get(st, "Narrando")
+                unidade = i18n.do_motor(ev.get("partsUnit")) or t("parts")
+                partes = f"{ev['partsDone']}/{ev['partsTotal']} {unidade}" if ev.get("partsTotal") else ""
+                etapa = i18n.do_motor((ev.get("message") or "").rstrip(".…")) or t(NOME_ETAPA.get(st, "engine_narrating"))
                 painel.atualizar(fid, pct=float(ev.get("progress") or 0), etapa=etapa, partes=partes)
             elif tipo == "speed":
                 bps = ev.get("bytesPerSec") or 0
@@ -454,8 +485,9 @@ def converter(livros, formato, pasta):
                 painel.atualizar(fid, pct=100.0, fim="ok")
                 resultados[fid].update(ok=True, arquivos=ev.get("paths") or [])
             elif tipo == "error":
-                painel.atualizar(fid, fim="erro", etapa=ev.get("error") or "Falha na conversão")
-                resultados[fid].update(erro=ev.get("error"), detalhes=ev.get("details"))
+                erro = i18n.do_motor(ev.get("error")) or t("conversion_failed")
+                painel.atualizar(fid, fim="erro", etapa=erro)
+                resultados[fid].update(erro=erro, detalhes=ev.get("details"))
             if time.time() - ultimo_desenho > 0.2 or tipo in ("done", "error"):
                 painel.desenhar()
                 ultimo_desenho = time.time()
@@ -490,7 +522,7 @@ def converter(livros, formato, pasta):
     if cancelado:
         for fid, r in resultados.items():
             if not r["ok"] and not r["erro"]:
-                painel.atualizar(fid, fim="erro", etapa="Cancelado")
+                painel.atualizar(fid, fim="erro", etapa=t("cancelled"))
     painel.retomar()
     try:
         os.remove(cfg)
@@ -498,7 +530,7 @@ def converter(livros, formato, pasta):
         pass
     for fid, r in resultados.items():
         if not r["ok"] and not r["erro"]:
-            r["erro"] = "Conversão cancelada." if cancelado else "O processo de conversão terminou antes de concluir este livro."
+            r["erro"] = t("conversion_cancelled") if cancelado else t("ended_early")
             r["detalhes"] = "".join(erros_motor[-15:]).strip() or None
     return resultados, cancelado
 
@@ -510,12 +542,12 @@ def confirmar_cancelamento(painel, padrao_sigint):
     try:
         signal.signal(signal.SIGINT, padrao_sigint)  # durante a pergunta, o Ctrl+C volta a interromper
         print()
-        cancelar = ui.sim_nao("Cancelar a conversão? O que já foi narrado fica salvo para continuar depois.", padrao=False)
+        cancelar = ui.sim_nao(t("cancel_q"), padrao=False)
     except KeyboardInterrupt:
         print()
         cancelar = True
     if cancelar:
-        ui.dica("Cancelando...")
+        ui.dica(t("cancelling"))
     else:
         print()
         painel.retomar()
@@ -542,65 +574,77 @@ def encerrar_motor(proc):
 # ---------------------------------------------------------------------------------------------
 # Programa
 # ---------------------------------------------------------------------------------------------
+def _idioma_pedido(argv):
+    """--lang xx / --lang=xx, lido antes do argparse para a própria ajuda (--help) sair no idioma certo."""
+    for i, a in enumerate(argv):
+        if a == "--lang" and i + 1 < len(argv):
+            return argv[i + 1]
+        if a.startswith("--lang="):
+            return a.split("=", 1)[1]
+    return None
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Converte e-books em audiobooks no terminal.")
-    parser.add_argument("arquivos", nargs="*", help="e-books para converter (EPUB, PDF, MOBI, AZW3, TXT)")
-    parser.add_argument("-o", "--saida", help="pasta onde salvar os audiobooks")
+    i18n.configurar(_idioma_pedido(sys.argv[1:]))
+    parser = argparse.ArgumentParser(description=t("cli_description"))
+    parser.add_argument("arquivos", nargs="*", help=t("cli_files_help"))
+    parser.add_argument("-o", "--saida", "--output", help=t("cli_output_help"))
+    parser.add_argument("--lang", choices=i18n.IDIOMAS, help=t("cli_lang_help", langs=", ".join(i18n.IDIOMAS)))
     args = parser.parse_args()
 
-    ui.banner("Audiobook Generator", VERSAO, "E-books em audiobooks com vozes neurais · EPUB, PDF, MOBI, AZW3, TXT → M4B, MP3")
+    ui.banner("Audiobook Generator", VERSAO, t("app_tagline"))
     verificar_dependencias()
 
     # 1) Livros
-    ui.etapa(1, TOTAL_ETAPAS, "Escolha os e-books", "livros")
+    ui.etapa(1, TOTAL_ETAPAS, t("step_books"), "livros")
     caminhos = args.arquivos or escolher_arquivos()
     validos = []
     for c in caminhos:
         if not os.path.isfile(c):
-            ui.falha(f"Arquivo não encontrado: {c}")
+            ui.falha(t("file_not_found", path=c))
         elif not c.lower().endswith(EXTENSOES):
-            ui.falha(f"Formato não suportado: {os.path.basename(c)} (use EPUB, PDF, MOBI, AZW3 ou TXT)")
+            ui.falha(t("unsupported_format", name=os.path.basename(c)))
         else:
             validos.append(c)
     if not validos:
-        ui.falha("Nenhum e-book para converter.")
+        ui.falha(t("no_ebooks"))
         return 1
     livros = ler_livros(validos)
     if not livros:
-        ui.falha("Nenhum dos arquivos pôde ser lido.")
+        ui.falha(t("none_readable"))
         return 1
 
     # 2) Informações, tradução, texto sincronizado e voz de cada livro
-    ui.etapa(2, TOTAL_ETAPAS, "Informações, tradução e voz", "voz")
+    ui.etapa(2, TOTAL_ETAPAS, t("step_setup"), "voz")
     configurar_livros(livros)
 
     # 3) Formato
-    ui.etapa(3, TOTAL_ETAPAS, "Formato dos audiobooks", "formato")
+    ui.etapa(3, TOTAL_ETAPAS, t("step_format"), "formato")
     formato, nome_formato = escolher_formato()
 
     # 4) Pasta
-    ui.etapa(4, TOTAL_ETAPAS, "Onde salvar", "pasta")
+    ui.etapa(4, TOTAL_ETAPAS, t("step_folder"), "pasta")
     pasta = os.path.normpath(args.saida) if args.saida else escolher_pasta()
     os.makedirs(pasta, exist_ok=True)
-    ui.ok(f"Salvando em {ui.texto(pasta)}")
+    ui.ok(t("saving_to", folder=ui.texto(pasta)))
 
     # 5) Resumo
-    ui.etapa(5, TOTAL_ETAPAS, "Resumo", "converter")
+    ui.etapa(5, TOTAL_ETAPAS, t("step_summary"), "converter")
     for l in livros:
         voz = nome_voz(next(v for v in VOZES if v["c"] == l["voz"]))
         print(f"  {ui.destaque(ui.ICONE['item'])} {ui.negrito(l['titulo'])} {ui.suave('— ' + l['autor'])}")
-        detalhes = [f"voz {voz[0]}, {voz[1]}",
-                    f"traduzir para {nome_idioma(l['traduzir']).lower()}" if l["traduzir"] else "sem tradução",
-                    "com texto sincronizado" if l["texto"] else "sem texto sincronizado"]
+        detalhes = [t("summary_voice", name=voz[0], details=voz[1]),
+                    t("translate_to_lower", language=nome_idioma_frase(l["traduzir"])) if l["traduzir"] else t("without_translation"),
+                    t("with_sync") if l["texto"] else t("without_sync")]
         print("    " + ui.suave(" · ".join(detalhes)))
-    print("  " + ui.suave(f"Formato: {nome_formato} · Pasta: {pasta}"))
-    if not ui.sim_nao("Começar a conversão?", padrao=True):
-        ui.dica("Conversão não iniciada.")
+    print("  " + ui.suave(t("summary_format_folder", format=nome_formato, folder=pasta)))
+    if not ui.sim_nao(t("start_q"), padrao=True):
+        ui.dica(t("not_started"))
         return 0
 
     # 6) Conversão
-    ui.etapa(6, TOTAL_ETAPAS, "Convertendo", "converter")
-    ui.dica("Ctrl+C para cancelar. Se parar no meio, converta de novo: o que já foi narrado é aproveitado.")
+    ui.etapa(6, TOTAL_ETAPAS, t("step_converting"), "converter")
+    ui.dica(t("ctrl_c_hint"))
     print()
     inicio = time.time()
     resultados, cancelado = converter(livros, formato, pasta)
@@ -620,11 +664,11 @@ def main():
                     ui.dica("    " + linha)
     print()
     if concluidos:
-        ui.ok(ui.sucesso(f"{len(concluidos)} de {len(livros)} audiobook(s) pronto(s) em {minutos:.1f} min."))
-        if ui.sim_nao("Abrir a pasta dos audiobooks?", padrao=True):
+        ui.ok(ui.sucesso(t("n_ready", done=len(concluidos), total=len(livros), minutes=f"{minutos:.1f}")))
+        if ui.sim_nao(t("open_folder_q"), padrao=True):
             abrir(pasta)
     elif not cancelado:
-        ui.falha("Nenhum audiobook foi gerado.")
+        ui.falha(t("none_created"))
     return 0 if len(concluidos) == len(livros) else 2
 
 
@@ -633,5 +677,5 @@ if __name__ == "__main__":
         sys.exit(main())
     except KeyboardInterrupt:
         print()
-        ui.dica("Saindo.")
+        ui.dica(t("exiting"))
         sys.exit(130)

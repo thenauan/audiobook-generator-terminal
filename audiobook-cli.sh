@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Audiobook Generator no terminal (macOS e Linux): ./audiobook-cli.sh [livros...] [-o pasta]
+# Audiobook Generator in the terminal (macOS and Linux): ./audiobook-cli.sh [books...] [-o folder] [--lang xx]
 cd "$(dirname "$0")" || exit 1
 
 PYTHON=""
@@ -10,9 +10,9 @@ for p in python3 python; do
     fi
 done
 if [ -z "$PYTHON" ]; then
-    echo "Precisa do Python 3.10 ou mais novo."
+    echo "Python 3.10 or newer is required."
     echo "  macOS:  brew install python"
-    echo "  Linux:  sudo apt install python3 python3-pip python3-tk   (ou dnf / pacman)"
+    echo "  Linux:  sudo apt install python3 python3-pip python3-tk   (or dnf / pacman)"
     exit 1
 fi
 

@@ -20,6 +20,8 @@ import sys
 import threading
 import unicodedata
 
+from i18n import palavras, t
+
 # ---------------------------------------------------------------------------------------------
 # Terminal
 # ---------------------------------------------------------------------------------------------
@@ -100,7 +102,7 @@ def banner(nome, versao, slogan):
 def etapa(numero, total, titulo, icone=None):
     print()
     marcador = f"{ICONE[icone]}  " if icone else ""
-    print("  " + destaque(f"{ICONE['etapa']} Etapa {numero}/{total}") + "  " + negrito(f"{marcador}{titulo}"))
+    print("  " + destaque(f"{ICONE['etapa']} " + t("step", n=numero, total=total)) + "  " + negrito(f"{marcador}{titulo}"))
     print(suave("  " + "─" * (largura() - 4)))
 
 
@@ -152,7 +154,10 @@ def perguntar(rotulo, padrao=""):
 
 
 def sim_nao(rotulo, padrao=True):
-    op = "S/n" if padrao else "s/N"
+    op = t("yn_default_yes") if padrao else t("yn_default_no")
+    # Respostas no idioma da interface e, em qualquer idioma, y/yes e n/no
+    sim = set(palavras("yes_words")) | {"y", "yes"}
+    nao = set(palavras("no_words")) | {"n", "no"}
     while True:
         try:
             r = input("  " + destaque(ICONE["pergunta"]) + " " + rotulo + " " + suave(f"({op})") + " ").strip().lower()
@@ -160,11 +165,11 @@ def sim_nao(rotulo, padrao=True):
             r = ""
         if not r:
             return padrao
-        if r in ("s", "sim", "y", "yes"):
+        if r in sim:
             return True
-        if r in ("n", "nao", "não", "no"):
+        if r in nao:
             return False
-        alerta("Responda s (sim) ou n (não).")
+        alerta(t("answer_yes_no"))
 
 
 def escolher(rotulo, opcoes, padrao=0, extras=None, colunas=1):
@@ -194,7 +199,7 @@ def escolher(rotulo, opcoes, padrao=0, extras=None, colunas=1):
             return partes[0].lower(), (partes[1] if len(partes) > 1 else "")
         if r.isdigit() and 1 <= int(r) <= len(opcoes):
             return int(r) - 1
-        alerta(f"Digite um número de 1 a {len(opcoes)}.")
+        alerta(t("enter_number", max=len(opcoes)))
 
 
 # ---------------------------------------------------------------------------------------------
@@ -203,7 +208,7 @@ def escolher(rotulo, opcoes, padrao=0, extras=None, colunas=1):
 class PainelProgresso:
     def __init__(self, livros):
         self.livros = livros  # lista de dicts com id e titulo
-        self.estado = {l["id"]: {"pct": 0.0, "etapa": "Na fila", "partes": "", "vel": "", "fim": None,
+        self.estado = {l["id"]: {"pct": 0.0, "etapa": t("queued"), "partes": "", "vel": "", "fim": None,
                                  "amostras": [], "restante": None, "ultimo_passo": None} for l in livros}
         self.desenhado = 0
         self.pausado = False
@@ -254,7 +259,7 @@ class PainelProgresso:
             e["restante"] = max(0, anterior - decorrido)
         e["ultimo_passo"] = agora
         if e["restante"] is None:
-            return "calculando"
+            return t("calculating")
         s = max(1, int(round(e["restante"])))
         return f"{s // 3600}h {(s % 3600) // 60:02d}m" if s >= 3600 else f"{s // 60}m {s % 60:02d}s" if s >= 60 else f"{s}s"
 
@@ -265,7 +270,7 @@ class PainelProgresso:
         titulo = cortar(livro["titulo"], larg_titulo)
         titulo += " " * max(0, larg_titulo - visivel(titulo))
         if e["fim"] == "ok":
-            return "  " + sucesso(ICONE["ok"]) + " " + texto(titulo) + "  " + sucesso("Concluído")
+            return "  " + sucesso(ICONE["ok"]) + " " + texto(titulo) + "  " + sucesso(t("done"))
         if e["fim"] == "erro":
             return "  " + erro(ICONE["erro"]) + " " + texto(titulo) + "  " + erro(cortar(e["etapa"], w - larg_titulo - 10))
         n = max(8, min(24, w - larg_titulo - 30))  # barra menor em terminais estreitos

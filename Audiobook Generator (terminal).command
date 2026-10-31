@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# macOS: dois cliques no Finder abrem o Audiobook Generator no Terminal
+# macOS: double-click in Finder to open Audiobook Generator in Terminal
 cd "$(dirname "$0")" || exit 1
 ./audiobook-cli.sh "$@"
 status=$?
 if [ $status -ne 0 ]; then
-    read -r -p "Pressione Enter para fechar..."
+    read -r -p "Press Enter to close..."
 fi
 exit $status
