@@ -24,7 +24,7 @@ import subprocess
 
 # O conversor roda fora do console do app (para o Ctrl+C não derrubá-lo). Sem console, cada programa que
 # ele abre (FFmpeg etc.) criaria uma janela própria na tela: no Windows, todos abrem sem janela.
-_CLASSE_PRIORIDADE = 0x00004000  # BELOW_NORMAL; IDLE (0x40) no modo leve, NORMAL (0x20) no turbo
+_CLASSE_PRIORIDADE = 0x00004000  # BELOW_NORMAL; IDLE (0x40) no modo leve
 if os.name == "nt":
     _popen_init = subprocess.Popen.__init__
 
@@ -55,7 +55,7 @@ from book_structure import estruturar_livro, preparar_para_narracao, titulo_fala
 # Medido: 10 → 86-117x o tempo real; 12-16 → 210-265x; 20-24 → 155-190x (o serviço limita) — e o melhor
 # ponto muda com a rede e com a hora, por isso o ajuste automático em vez de um número fixo
 TTS_CONEXOES = 10
-TTS_MIN, TTS_MAX = 3, 24
+TTS_MIN, TTS_MAX = 3, 32  # modo leve: fixo em 4
 FFMPEG_PARALELO = max(1, min(4, (os.cpu_count() or 2) // 2))
 TAMANHO_BLOCO = 2500
 PAUSA_INICIAL_S = 1.5  # pausa no começo de cada capítulo (normalizar_capitulo)
@@ -1106,25 +1106,18 @@ async def main():
     else:
         config = json.loads(arg)
     global _vagas, TTS_CONEXOES, TTS_MAX, FFMPEG_PARALELO
+    # Dois modos: adaptável (o padrão) e leve. O antigo "turbo" é ignorado (vira o adaptável, que já vai além dele).
     leve = bool(config.get("lite"))
-    turbo = bool(config.get("turbo")) and not leve
-    adaptavel = bool(config.get("adaptive")) and not leve and not turbo
-    if adaptavel:
-        # Modo adaptável (versão de terminal): em vez de leve/turbo, se ajusta sozinho — as conexões de voz sobem
-        # e descem com o que o serviço aguenta (até 32) e o FFmpeg usa todos os núcleos menos um, com prioridade
-        # abaixo do normal: quando o computador está livre, a conversão usa tudo; quando você usa outro programa,
-        # o sistema dá a vez a ele e a conversão fica mais leve.
-        TTS_MAX, FFMPEG_PARALELO = 32, max(1, min(8, (os.cpu_count() or 2) - 1))
-    elif leve:
+    if leve:
         # Modo leve: um livro por vez, menos conexões de voz, um FFmpeg por vez e prioridade mínima.
         # Converte mais devagar, mas o computador e o app ficam livres.
         TTS_CONEXOES, TTS_MAX, FFMPEG_PARALELO = 4, 4, 1
         _prioridade_baixa(minima=True)
-    elif turbo:
-        # Modo turbo: começa com mais conexões de voz e pode chegar a 32, um FFmpeg por núcleo (até 8) e
-        # prioridade normal. Usa bem mais processador e memória.
-        TTS_CONEXOES, TTS_MAX, FFMPEG_PARALELO = 14, 32, max(2, min(8, os.cpu_count() or 2))
-        _prioridade_baixa(normal=True)
+    else:
+        # Modo adaptável: se ajusta sozinho às condições — as conexões de voz sobem e descem com o que o serviço
+        # aguenta (3 a 32) e o FFmpeg usa todos os núcleos menos um (até 8), com prioridade abaixo do normal:
+        # com o computador livre a conversão usa tudo; quando outro programa precisa, o sistema dá a vez a ele.
+        TTS_MAX, FFMPEG_PARALELO = 32, max(1, min(8, (os.cpu_count() or 2) - 1))
     # "max_connections" (opcional) fixa o teto das conexões de voz; "adaptive_connections": false desliga o ajuste
     if config.get("max_connections"):
         TTS_MAX = max(1, int(config["max_connections"]))
@@ -1133,7 +1126,7 @@ async def main():
                                   adaptar=not leve and config.get("adaptive_connections", True) is not False)
     _sem_ffmpeg = asyncio.Semaphore(FFMPEG_PARALELO)
     _vagas = asyncio.Condition()
-    _sem_traducao = asyncio.Semaphore(1 if leve else 6 if turbo else 3)
+    _sem_traducao = asyncio.Semaphore(1 if leve else 3)
     livros = config.get("files", [])
     try:
         if leve:
@@ -1185,19 +1178,18 @@ def _encerrar_se_o_app_fechar():
     threading.Thread(target=vigiar, daemon=True).start()
 
 
-def _prioridade_baixa(minima=False, normal=False):
+def _prioridade_baixa(minima=False):
     """A conversão roda com prioridade abaixo do normal: o app (carregar livros, capas) e o resto do
     computador continuam rápidos; a conversão usa a CPU que sobra, que costuma ser quase toda.
-    No modo leve, prioridade mínima (só usa a CPU que ninguém está usando), também para o FFmpeg; no modo
-    turbo, prioridade normal (disputa a CPU de igual para igual com os outros programas)."""
+    No modo leve, prioridade mínima (só usa a CPU que ninguém está usando), também para o FFmpeg."""
     global _CLASSE_PRIORIDADE
     try:
         if os.name == "nt":
             import ctypes
-            _CLASSE_PRIORIDADE = 0x00000040 if minima else 0x00000020 if normal else 0x00004000
+            _CLASSE_PRIORIDADE = 0x00000040 if minima else 0x00004000
             ctypes.windll.kernel32.SetPriorityClass(ctypes.windll.kernel32.GetCurrentProcess(), _CLASSE_PRIORIDADE)
         else:
-            os.nice(10 if minima else 0 if normal else 5)
+            os.nice(10 if minima else 5)
     except Exception:
         pass
 
