@@ -20,7 +20,6 @@
  "prompt_file": "Dosya",
  "opening_folder_picker": "Klasör seçici açılıyor... (bu pencerenin arkasında açılabilir)",
  "folder_picker_title": "Sesli kitapların kaydedileceği yer",
- "no_folder_chosen": "Klasör seçilmedi: varsayılan klasör kullanılıyor.",
  "prompt_folder": "Kayıt klasörü",
  "cannot_open": "Açılamadı: {error}",
  "missing_libs": "Eksik Python kütüphaneleri: {libs}",
@@ -177,5 +176,8 @@
  "update_done": "{version} sürümüne güncellendi. Kullanmak için Audiobook Generator'ı yeniden açın.",
  "update_windows_window": "Güncelleme yeni bir pencerede devam ediyor. Bittiğinde Audiobook Generator'ı yeniden açın.",
  "update_failed": "Güncelleme başarısız oldu. Elle güncelleyin:",
- "cli_no_update_help": "açılışta yeni sürüm denetleme"
+ "cli_no_update_help": "açılışta yeni sürüm denetleme",
+ "files_hint_picker": "Dosya seçiciyi yeniden açmak için Enter'a (veya o'ya) basın ya da dosyaları buraya yazın/sürükleyin (her satıra bir veya birkaç; boş satır bitirir).",
+ "no_folder_picked": "Seçicide klasör seçilmedi.",
+ "folder_hint_picker": "o klasör seçiciyi yeniden açar, Enter varsayılan klasörü kullanır, ya da bir klasör yazın/sürükleyin."
 }

@@ -20,7 +20,6 @@
  "prompt_file": "Fichier",
  "opening_folder_picker": "Ouverture du sélecteur de dossiers... (il peut s'ouvrir derrière cette fenêtre)",
  "folder_picker_title": "Où enregistrer les livres audio",
- "no_folder_chosen": "Aucun dossier choisi : utilisation du dossier par défaut.",
  "prompt_folder": "Dossier d'enregistrement",
  "cannot_open": "Impossible d'ouvrir : {error}",
  "missing_libs": "Bibliothèques Python manquantes : {libs}",
@@ -177,5 +176,8 @@
  "update_done": "Mis à jour vers la {version}. Rouvrez Audiobook Generator pour l'utiliser.",
  "update_windows_window": "La mise à jour continue dans une nouvelle fenêtre. Quand elle est terminée, rouvrez Audiobook Generator.",
  "update_failed": "La mise à jour a échoué. Mettez à jour manuellement :",
- "cli_no_update_help": "ne pas chercher de nouvelle version au démarrage"
+ "cli_no_update_help": "ne pas chercher de nouvelle version au démarrage",
+ "files_hint_picker": "Entrée (ou o) rouvre le sélecteur de fichiers ; ou saisissez/glissez les fichiers ici (un ou plusieurs par ligne ; une ligne vide termine).",
+ "no_folder_picked": "Aucun dossier choisi dans le sélecteur.",
+ "folder_hint_picker": "o rouvre le sélecteur de dossiers, Entrée utilise le dossier par défaut, ou saisissez/glissez un dossier."
 }

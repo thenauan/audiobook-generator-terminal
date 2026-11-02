@@ -186,24 +186,38 @@ def _tk():
         return None, None
 
 
+TECLA_SELETOR = "o"  # reabre o seletor de arquivos/pasta depois de fechá-lo sem escolher nada
+
+
 def escolher_arquivos():
-    raiz, dialogo = _tk()
-    if raiz:
-        ui.dica(t("opening_file_picker"))
-        caminhos = dialogo.askopenfilenames(
-            parent=raiz, title=t("file_picker_title"),
-            filetypes=[(t("filetype_ebooks"), " ".join(f"*{e}" for e in EXTENSOES)), (t("filetype_all"), "*.*")])
-        raiz.destroy()
-        if caminhos:
-            return list(caminhos)
-        ui.alerta(t("no_file_chosen"))
-    ui.dica(t("type_or_drag"))
-    caminhos = []
+    """Seletor do sistema; se ele for fechado sem escolher nada, dá para abri-lo de novo (Enter ou o)
+    ou digitar/arrastar os arquivos. Sem seletor (sem tkinter, SSH), só digitando."""
     while True:
-        linha = ui.perguntar(t("prompt_file")).strip()
-        if not linha:
-            return caminhos
-        caminhos.extend(caminhos_digitados(linha))
+        raiz, dialogo = _tk()
+        if raiz:
+            ui.dica(t("opening_file_picker"))
+            caminhos = dialogo.askopenfilenames(
+                parent=raiz, title=t("file_picker_title"),
+                filetypes=[(t("filetype_ebooks"), " ".join(f"*{e}" for e in EXTENSOES)), (t("filetype_all"), "*.*")])
+            raiz.destroy()
+            if caminhos:
+                return list(caminhos)
+            ui.alerta(t("no_file_chosen"))
+            ui.dica(t("files_hint_picker"))
+        else:
+            ui.dica(t("type_or_drag"))
+        caminhos = []
+        while True:
+            linha = ui.perguntar(t("prompt_file")).strip()
+            if raiz and linha.lower() == TECLA_SELETOR:
+                break  # abre o seletor de novo
+            if not linha:
+                if caminhos:
+                    return caminhos
+                if raiz:
+                    break  # nada digitado ainda: Enter abre o seletor de novo
+                continue
+            caminhos.extend(caminhos_digitados(linha))
 
 
 def caminhos_digitados(linha):
@@ -239,19 +253,26 @@ def pasta_padrao():
 
 
 def escolher_pasta(sugerida=None):
+    """Seletor de pastas; se ele for fechado sem escolher nada: o abre de novo, Enter usa a pasta padrão,
+    ou dá para digitar/arrastar uma pasta."""
     padrao = sugerida or pasta_padrao()
-    raiz, dialogo = _tk()
-    if raiz:
+    while True:
+        raiz, dialogo = _tk()
+        if not raiz:
+            pasta = ui.perguntar(t("prompt_folder"), padrao)
+            return os.path.normpath((caminhos_digitados(pasta) or [padrao])[0])
         ui.dica(t("opening_folder_picker"))
         os.makedirs(padrao, exist_ok=True)
         pasta = dialogo.askdirectory(parent=raiz, title=t("folder_picker_title"), initialdir=padrao, mustexist=False)
         raiz.destroy()
         if pasta:
             return os.path.normpath(pasta)
-        ui.dica(t("no_folder_chosen"))
-        return padrao
-    pasta = ui.perguntar(t("prompt_folder"), padrao)
-    return os.path.normpath((caminhos_digitados(pasta) or [padrao])[0])
+        ui.alerta(t("no_folder_picked"))
+        ui.dica(t("folder_hint_picker"))
+        resposta = ui.perguntar(t("prompt_folder"), padrao).strip()
+        if resposta.lower() == TECLA_SELETOR:
+            continue  # abre o seletor de novo
+        return os.path.normpath((caminhos_digitados(resposta) or [padrao])[0])
 
 
 def abrir(caminho):
@@ -786,17 +807,21 @@ def main():
     # 1) Livros
     ui.etapa(1, TOTAL_ETAPAS, t("step_books"), "livros")
     caminhos = args.arquivos or escolher_arquivos()
-    validos = []
-    for c in caminhos:
-        if not os.path.isfile(c):
-            ui.falha(t("file_not_found", path=c))
-        elif not c.lower().endswith(EXTENSOES):
-            ui.falha(t("unsupported_format", name=os.path.basename(c)))
-        else:
-            validos.append(c)
-    if not validos:
+    while True:
+        validos = []
+        for c in caminhos:
+            if not os.path.isfile(c):
+                ui.falha(t("file_not_found", path=c))
+            elif not c.lower().endswith(EXTENSOES):
+                ui.falha(t("unsupported_format", name=os.path.basename(c)))
+            else:
+                validos.append(c)
+        if validos:
+            break
         ui.falha(t("no_ebooks"))
-        return 1
+        if args.arquivos or sem_perguntas or not sys.stdin.isatty():
+            return 1
+        caminhos = escolher_arquivos()  # nada válido escolhido: escolhe de novo
     livros = ler_livros(validos)
     if not livros:
         ui.falha(t("none_readable"))

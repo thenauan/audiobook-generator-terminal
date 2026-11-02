@@ -20,7 +20,6 @@
  "prompt_file": "File",
  "opening_folder_picker": "Opening the folder picker... (it may open behind this window)",
  "folder_picker_title": "Where to save the audiobooks",
- "no_folder_chosen": "No folder chosen: using the default folder.",
  "prompt_folder": "Folder to save to",
  "cannot_open": "Could not open: {error}",
  "missing_libs": "Missing Python libraries: {libs}",
@@ -177,5 +176,8 @@
  "update_done": "Updated to {version}. Open Audiobook Generator again to use it.",
  "update_windows_window": "The update continues in a new window. When it finishes, open Audiobook Generator again.",
  "update_failed": "The update didn't work. Update manually:",
- "cli_no_update_help": "don't check for a new version when starting"
+ "cli_no_update_help": "don't check for a new version when starting",
+ "files_hint_picker": "Press Enter (or o) to open the file picker again, or type/drag the files here (one or more per line; an empty line finishes).",
+ "no_folder_picked": "No folder chosen in the picker.",
+ "folder_hint_picker": "o opens the folder picker again, Enter uses the default folder, or type/drag a folder."
 }

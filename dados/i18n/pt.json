@@ -20,7 +20,6 @@
  "prompt_file": "Arquivo",
  "opening_folder_picker": "Abrindo o seletor de pastas... (ele pode abrir atrás desta janela)",
  "folder_picker_title": "Onde salvar os audiobooks",
- "no_folder_chosen": "Nenhuma pasta escolhida: usando a pasta padrão.",
  "prompt_folder": "Pasta onde salvar",
  "cannot_open": "Não foi possível abrir: {error}",
  "missing_libs": "Faltam bibliotecas do Python: {libs}",
@@ -177,5 +176,8 @@
  "update_done": "Atualizado para a {version}. Abra o Audiobook Generator de novo para usar.",
  "update_windows_window": "A atualização continua numa janela nova. Quando ela terminar, abra o Audiobook Generator de novo.",
  "update_failed": "A atualização não deu certo. Atualize manualmente:",
- "cli_no_update_help": "não procurar versão nova ao abrir"
+ "cli_no_update_help": "não procurar versão nova ao abrir",
+ "files_hint_picker": "Enter (ou o) abre o seletor de arquivos de novo; ou digite/arraste os arquivos para cá (um ou vários por linha; linha vazia termina).",
+ "no_folder_picked": "Nenhuma pasta escolhida no seletor.",
+ "folder_hint_picker": "o abre o seletor de pastas de novo, Enter usa a pasta padrão, ou digite/arraste uma pasta."
 }

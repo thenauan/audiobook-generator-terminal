@@ -20,7 +20,6 @@
  "prompt_file": "文件",
  "opening_folder_picker": "正在打开文件夹选择器……（它可能在此窗口后面打开）",
  "folder_picker_title": "有声书保存位置",
- "no_folder_chosen": "未选择文件夹：使用默认文件夹。",
  "prompt_folder": "保存文件夹",
  "cannot_open": "无法打开：{error}",
  "missing_libs": "缺少 Python 库：{libs}",
@@ -177,5 +176,8 @@
  "update_done": "已更新到 {version}。请重新打开 Audiobook Generator 使用。",
  "update_windows_window": "更新将在新窗口中继续。完成后请重新打开 Audiobook Generator。",
  "update_failed": "更新失败。请手动更新：",
- "cli_no_update_help": "启动时不检查新版本"
+ "cli_no_update_help": "启动时不检查新版本",
+ "files_hint_picker": "按 Enter（或 o）重新打开文件选择器；或在此输入/拖入文件（每行一个或多个；空行结束）。",
+ "no_folder_picked": "选择器中没有选择文件夹。",
+ "folder_hint_picker": "o 重新打开文件夹选择器，Enter 使用默认文件夹，或输入/拖入一个文件夹。"
 }

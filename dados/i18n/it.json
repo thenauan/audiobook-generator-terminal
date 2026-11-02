@@ -20,7 +20,6 @@
  "prompt_file": "File",
  "opening_folder_picker": "Apertura della selezione cartella... (potrebbe aprirsi dietro questa finestra)",
  "folder_picker_title": "Dove salvare gli audiolibri",
- "no_folder_chosen": "Nessuna cartella scelta: verrà usata la cartella predefinita.",
  "prompt_folder": "Cartella di salvataggio",
  "cannot_open": "Impossibile aprire: {error}",
  "missing_libs": "Librerie Python mancanti: {libs}",
@@ -177,5 +176,8 @@
  "update_done": "Aggiornato alla {version}. Riapri Audiobook Generator per usarla.",
  "update_windows_window": "L'aggiornamento continua in una nuova finestra. Quando finisce, riapri Audiobook Generator.",
  "update_failed": "L'aggiornamento non è riuscito. Aggiorna manualmente:",
- "cli_no_update_help": "non cercare una nuova versione all'avvio"
+ "cli_no_update_help": "non cercare una nuova versione all'avvio",
+ "files_hint_picker": "Invio (o la lettera o) riapre la selezione file; oppure digita/trascina qui i file (uno o più per riga; una riga vuota per terminare).",
+ "no_folder_picked": "Nessuna cartella scelta nella selezione.",
+ "folder_hint_picker": "o riapre la selezione cartella, Invio usa la cartella predefinita, oppure digita/trascina una cartella."
 }
