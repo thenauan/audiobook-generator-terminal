@@ -147,8 +147,6 @@
  "cli_sync_help": "créer un texte synchronisé pour les lecteurs de livres audio",
  "cli_no_sync_help": "ne pas créer de texte synchronisé",
  "cli_yes_help": "sans questions : utilise les options données et les derniers choix (ou les valeurs par défaut)",
- "cli_lite_help": "mode léger : un livre à la fois, laisse l'ordinateur libre",
- "cli_turbo_help": "mode turbo : plus de connexions et de processeur, conversion plus rapide",
  "voice_unknown": "Voix inconnue : {voice}. Consultez la liste des voix sans --voice.",
  "voice_ignored": "La voix {voice} ne lit pas en {language} : utilisation de {default}.",
  "format_needs_ffmpeg": "{format} nécessite FFmpeg : utilisation du MP3.",
@@ -179,5 +177,6 @@
  "cli_no_update_help": "ne pas chercher de nouvelle version au démarrage",
  "files_hint_picker": "Entrée (ou o) rouvre le sélecteur de fichiers ; ou saisissez/glissez les fichiers ici (un ou plusieurs par ligne ; une ligne vide termine).",
  "no_folder_picked": "Aucun dossier choisi dans le sélecteur.",
- "folder_hint_picker": "o rouvre le sélecteur de dossiers, Entrée utilise le dossier par défaut, ou saisissez/glissez un dossier."
+ "folder_hint_picker": "o rouvre le sélecteur de dossiers, Entrée utilise le dossier par défaut, ou saisissez/glissez un dossier.",
+ "n_connections": "{n} connexions"
 }

@@ -82,11 +82,19 @@ audiobook-generator *.epub --voice en-US-AndrewNeural --format m4b --no-sync --y
 | `--translate LANG` | translate the books (`en`, `es`, `pt`, `ru`, `ar`, `fr`, `it`, `tr`, `hi`, `zh`, `ur`) |
 | `--sync` / `--no-sync` | create (or not) synced text for audiobook players |
 | `-y`, `--yes` | no questions |
-| `--lite` / `--turbo` | lite: one book at a time, leaves the computer free · turbo: more connections and CPU, faster |
 | `-o`, `--output` | output folder |
 | `--lang` | interface language |
 
 The app remembers your last voice (per language), format, quality, folder and synced-text choice and suggests them next time.
+
+### Speed: adapts by itself
+
+There are no speed modes to choose — the conversion adapts to the conditions:
+
+- **Voice connections** start at 10 and adjust between 3 and 32: they go up while the voice service keeps up, and back off as soon as it slows down or returns errors. The progress line shows how many are in use.
+- **Processing** (volume levelling and building the file) uses all CPU cores but one, at below-normal priority: with the computer free the conversion takes everything; when you use other programs, the system gives them priority and the conversion gets lighter.
+- **M4B is encoded chapter by chapter in parallel**: in a 2h16 book, building the M4B went from 92 s to 16 s, and the whole conversion from 158 s to 87 s.
+- Retries no longer hold a connection while waiting, and the per-request timeout follows the real response time.
 
 ### Audio quality
 

@@ -147,8 +147,6 @@
  "cli_sync_help": "为有声书播放器生成同步文本",
  "cli_no_sync_help": "不生成同步文本",
  "cli_yes_help": "不提问：使用给定选项和上次的选择（或默认值）",
- "cli_lite_help": "轻量模式：一次一本书，不占用电脑",
- "cli_turbo_help": "加速模式：更多连接和 CPU，转换更快",
  "voice_unknown": "未知语音：{voice}。不加 --voice 即可查看语音列表。",
  "voice_ignored": "语音 {voice} 不朗读{language}：改用 {default}。",
  "format_needs_ffmpeg": "{format} 需要 FFmpeg：改用 MP3。",
@@ -179,5 +177,6 @@
  "cli_no_update_help": "启动时不检查新版本",
  "files_hint_picker": "按 Enter（或 o）重新打开文件选择器；或在此输入/拖入文件（每行一个或多个；空行结束）。",
  "no_folder_picked": "选择器中没有选择文件夹。",
- "folder_hint_picker": "o 重新打开文件夹选择器，Enter 使用默认文件夹，或输入/拖入一个文件夹。"
+ "folder_hint_picker": "o 重新打开文件夹选择器，Enter 使用默认文件夹，或输入/拖入一个文件夹。",
+ "n_connections": "{n} 个连接"
 }

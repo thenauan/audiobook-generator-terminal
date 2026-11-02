@@ -51,7 +51,11 @@ from audio_output import (aplicar_ano, FORMATOS, EXTENSOES_AUDIO, formato, quali
 from book_structure import estruturar_livro, preparar_para_narracao, titulo_falado, limpar_texto, texto_completo, LivroIlegivel
 
 # Conexões simultâneas com o serviço de voz (todas as conversões somadas) e conversões do FFmpeg ao mesmo tempo
-TTS_CONEXOES = 10  # medido: 10 conexões dobram a velocidade; acima disso o serviço limita
+# Conexões de voz: começam em TTS_CONEXOES e se ajustam sozinhas entre TTS_MIN e TTS_MAX (_ControleConexoes).
+# Medido: 10 → 86-117x o tempo real; 12-16 → 210-265x; 20-24 → 155-190x (o serviço limita) — e o melhor
+# ponto muda com a rede e com a hora, por isso o ajuste automático em vez de um número fixo
+TTS_CONEXOES = 10
+TTS_MIN, TTS_MAX = 3, 24
 FFMPEG_PARALELO = max(1, min(4, (os.cpu_count() or 2) // 2))
 TAMANHO_BLOCO = 2500
 PAUSA_INICIAL_S = 1.5  # pausa no começo de cada capítulo (normalizar_capitulo)
@@ -408,8 +412,79 @@ def _processo_vivo(pid):
         return False
 
 
+class _ControleConexoes:
+    """Quantas conexões de voz ficam abertas ao mesmo tempo, ajustado pelo que o serviço aguenta agora:
+    sobe 1 a cada ~8 s enquanto há blocos esperando e o tempo por bloco está saudável; desce 1 quando o tempo
+    por bloco dispara (o serviço começou a segurar os pedidos) e cai para 70% quando há erros. Também dá o
+    tempo-limite de cada pedido pelo tempo real dos blocos (em vez de 2 minutos fixos)."""
+
+    JANELA_S = 8.0
+
+    def __init__(self, inicial, minimo, maximo, adaptar=True):
+        self.limite, self.minimo, self.maximo, self.adaptar = inicial, minimo, maximo, adaptar
+        self.em_uso = 0
+        self.esperando = 0
+        self._cond = asyncio.Condition()
+        self._erros = 0
+        self._tempos = []          # segundos por 1000 caracteres dos pedidos da janela
+        self._referencia = None    # melhor tempo por 1000 caracteres visto (esquece devagar)
+        self._ritmo = None         # média móvel do tempo por 1000 caracteres, para o tempo-limite
+        self._inicio_janela = asyncio.get_running_loop().time()
+
+    async def entrar(self):
+        async with self._cond:
+            self.esperando += 1
+            try:
+                await self._cond.wait_for(lambda: self.em_uso < self.limite)
+            finally:
+                self.esperando -= 1
+            self.em_uso += 1
+
+    async def sair(self, ok, segundos=0.0, caracteres=0):
+        async with self._cond:
+            self.em_uso -= 1
+            if ok and caracteres:
+                por_mil = segundos * 1000 / max(100, caracteres)
+                self._tempos.append(por_mil)
+                self._ritmo = por_mil if self._ritmo is None else self._ritmo * 0.8 + por_mil * 0.2
+            elif not ok:
+                self._erros += 1
+            self._ajustar()
+            self._cond.notify_all()
+
+    def tempo_limite(self, caracteres):
+        """Seis vezes o tempo esperado para o bloco, entre 30 s e 2 min."""
+        if self._ritmo is None:
+            return 120.0
+        return max(30.0, min(120.0, self._ritmo * max(100, caracteres) / 1000 * 6))
+
+    def _ajustar(self):
+        if not self.adaptar:
+            return
+        agora = asyncio.get_running_loop().time()
+        decorrido = agora - self._inicio_janela
+        antes = self.limite
+        if self._erros and decorrido >= 3:
+            self.limite = max(self.minimo, int(self.limite * 0.7))
+        elif decorrido >= self.JANELA_S and len(self._tempos) >= 3:
+            mediana = sorted(self._tempos)[len(self._tempos) // 2]
+            self._referencia = mediana if self._referencia is None else min(self._referencia * 1.05, mediana)
+            if mediana > self._referencia * 1.6:
+                self.limite = max(self.minimo, self.limite - 1)
+            elif self.esperando > 0 and self.em_uso >= self.limite - 1:
+                self.limite = min(self.maximo, self.limite + 1)
+        else:
+            return
+        self._erros, self._tempos, self._inicio_janela = 0, [], agora
+        if self.limite != antes:
+            emit({"type": "log", "message": f"Voz: {antes} → {self.limite} conexões"})
+
+
+_conexoes = None
+
+
 def _limite_por_livro():
-    return max(1, -(-TTS_CONEXOES // max(1, len(_NARRANDO))))
+    return max(1, -(-_conexoes.limite // max(1, len(_NARRANDO))))
 
 
 async def _pegar_vaga(fid):
@@ -446,52 +521,67 @@ async def sintetizar_bloco(texto, voz, destino, ao_concluir, com_palavras=False,
 
 
 async def _sintetizar_com_conexao(texto, voz, destino, ao_concluir, com_palavras, fid):
-    async with _sem_tts:
-        espera = 3
-        ultimo_erro = None
-        for tentativa in range(8):
-            parcial = destino + ".part"
-            try:
-                marcas = []
+    espera = 3
+    ultimo_erro = None
+    for tentativa in range(8):
+        if os.path.exists(destino) and os.path.getsize(destino) > 150:  # bloco igual a outro, que já ficou pronto
+            ao_concluir()
+            return destino
+        # Arquivo parcial próprio desta tentativa: blocos com o mesmo texto não disputam o mesmo arquivo
+        parcial = f"{destino}.{os.getpid()}_{id(asyncio.current_task())}_{tentativa}.part"
+        marcas = []
 
-                async def baixa():
-                    classe = obter_communicate()
-                    try:
-                        comm = classe(texto, voz, boundary="WordBoundary" if com_palavras else "SentenceBoundary")
-                    except TypeError:  # edge-tts antigo, sem a opção: só frases
-                        comm = classe(texto, voz)
-                    with open(parcial, "wb") as f:
-                        async for chunk in comm.stream():
-                            if chunk["type"] == "audio":
-                                f.write(chunk["data"])
-                                if fid is not None:
-                                    _BYTES[fid] = _BYTES.get(fid, 0) + len(chunk["data"])
-                            elif chunk["type"] in ("SentenceBoundary", "WordBoundary"):
-                                # offset e duração em unidades de 100 ns
-                                marcas.append([chunk["offset"] / 10_000_000, chunk["duration"] / 10_000_000,
-                                               html.unescape(chunk.get("text", "")), chunk["type"]])
-                await asyncio.wait_for(baixa(), timeout=120.0)
-                if os.path.getsize(parcial) > 150:
-                    palavras = [m[:3] for m in marcas if m[3] == "WordBoundary"]
-                    frases = [m[:3] for m in marcas if m[3] == "SentenceBoundary"]
-                    if palavras and not frases:
-                        frases = _frases_de_palavras(texto, palavras)
-                    _salvar_json(destino + ".json", {"frases": frases, "palavras": palavras})
-                    os.replace(parcial, destino)
-                    ao_concluir()
-                    return destino
+        async def baixa():
+            classe = obter_communicate()
+            try:
+                comm = classe(texto, voz, boundary="WordBoundary" if com_palavras else "SentenceBoundary")
+            except TypeError:  # edge-tts antigo, sem a opção: só frases
+                comm = classe(texto, voz)
+            with open(parcial, "wb") as f:
+                async for chunk in comm.stream():
+                    if chunk["type"] == "audio":
+                        f.write(chunk["data"])
+                        if fid is not None:
+                            _BYTES[fid] = _BYTES.get(fid, 0) + len(chunk["data"])
+                    elif chunk["type"] in ("SentenceBoundary", "WordBoundary"):
+                        # offset e duração em unidades de 100 ns
+                        marcas.append([chunk["offset"] / 10_000_000, chunk["duration"] / 10_000_000,
+                                       html.unescape(chunk.get("text", "")), chunk["type"]])
+
+        # A conexão só fica ocupada durante o pedido: na espera entre tentativas, outro bloco a usa
+        await _conexoes.entrar()
+        inicio = asyncio.get_running_loop().time()
+        ok = False
+        try:
+            await asyncio.wait_for(baixa(), timeout=_conexoes.tempo_limite(len(texto)))
+            if os.path.getsize(parcial) <= 150:
                 raise ValueError("o serviço de voz não devolveu áudio")
-            except Exception as e:
-                ultimo_erro = e
-                emit({"type": "log", "message": f"Voz: nova tentativa {tentativa + 1}/8 em {espera}s - {type(e).__name__}: {str(e)[:120]}"})
-                await asyncio.sleep(espera)
-                espera = min(espera * 2, 40)
-            finally:
-                if os.path.exists(parcial):
-                    try:
-                        os.remove(parcial)
-                    except OSError:
-                        pass
+            ok = True
+        except Exception as e:
+            ultimo_erro = e
+        finally:
+            await _conexoes.sair(ok, asyncio.get_running_loop().time() - inicio, len(texto))
+        try:
+            if ok:
+                palavras = [m[:3] for m in marcas if m[3] == "WordBoundary"]
+                frases = [m[:3] for m in marcas if m[3] == "SentenceBoundary"]
+                if palavras and not frases:
+                    frases = _frases_de_palavras(texto, palavras)
+                _salvar_json(destino + ".json", {"frases": frases, "palavras": palavras})
+                os.replace(parcial, destino)
+                ao_concluir()
+                return destino
+        except OSError as e:  # não deu para gravar o bloco: tenta de novo, como uma falha da voz
+            ultimo_erro = e
+        finally:
+            if os.path.exists(parcial):
+                try:
+                    os.remove(parcial)
+                except OSError:
+                    pass
+        emit({"type": "log", "message": f"Voz: nova tentativa {tentativa + 1}/8 em {espera}s - {type(ultimo_erro).__name__}: {str(ultimo_erro)[:120]}"})
+        await asyncio.sleep(espera)
+        espera = min(espera * 2, 40)
     falha = FalhaSintese(f"O serviço de voz não respondeu depois de várias tentativas ({type(ultimo_erro).__name__}). "
                          "Verifique a internet e converta de novo: o que já foi narrado fica salvo e a conversão continua de onde parou.")
     falha.codigo, falha.args_codigo = "err_tts", [type(ultimo_erro).__name__]
@@ -842,7 +932,8 @@ async def process_file(file_info, config):
                 agora, t = _BYTES.get(file_id, 0), asyncio.get_running_loop().time()
                 amostras = (amostras + [(agora - anterior) / max(0.001, t - t_ant)])[-4:]
                 anterior, t_ant = agora, t
-                emit({"type": "speed", "fileId": file_id, "bytesPerSec": round(sum(amostras) / len(amostras))})
+                emit({"type": "speed", "fileId": file_id, "bytesPerSec": round(sum(amostras) / len(amostras)),
+                      "connections": _conexoes.limite})
 
         await _mudar_narrando(file_id, True)
         medidor = asyncio.create_task(medir_velocidade())
@@ -913,8 +1004,11 @@ async def process_file(file_info, config):
                     inicio += dur
             os.makedirs(pasta_destino, exist_ok=True)
             saida = get_unique_path(os.path.join(pasta_destino, f"{nome_base}{ext_saida}"))
-            await asyncio.to_thread(gerar_arquivo_unico, saida, fmt_saida, qualidade_saida, chapters_info, titulo, autor, genero, narrador,
-                                    file_info.get("cover"), cache_dir, progresso_montagem)
+            # O M4B é codificado por capítulo em paralelo (FFMPEG_PARALELO de uma vez); com vários livros
+            # montando ao mesmo tempo, o semáforo do FFmpeg reparte os núcleos entre eles
+            async with _sem_ffmpeg:
+                await asyncio.to_thread(gerar_arquivo_unico, saida, fmt_saida, qualidade_saida, chapters_info, titulo, autor,
+                                        genero, narrador, file_info.get("cover"), cache_dir, progresso_montagem, FFMPEG_PARALELO)
             if ext_saida == ".mp3":
                 await asyncio.to_thread(aplicar_tags_arquivo_unico, saida, titulo, autor, file_info.get("cover"), chapters_info, genero, narrador)
             gerados.append(saida)
@@ -1001,7 +1095,7 @@ async def process_file(file_info, config):
 
 
 async def main():
-    global _sem_tts, _sem_ffmpeg, _sem_traducao
+    global _conexoes, _sem_ffmpeg, _sem_traducao
     if len(sys.argv) < 2:
         print("Uso: python converter.py <config.json>")
         sys.exit(1)
@@ -1011,20 +1105,32 @@ async def main():
             config = json.load(f)
     else:
         config = json.loads(arg)
-    global _vagas, TTS_CONEXOES, FFMPEG_PARALELO
+    global _vagas, TTS_CONEXOES, TTS_MAX, FFMPEG_PARALELO
     leve = bool(config.get("lite"))
     turbo = bool(config.get("turbo")) and not leve
-    if leve:
+    adaptavel = bool(config.get("adaptive")) and not leve and not turbo
+    if adaptavel:
+        # Modo adaptável (versão de terminal): em vez de leve/turbo, se ajusta sozinho — as conexões de voz sobem
+        # e descem com o que o serviço aguenta (até 32) e o FFmpeg usa todos os núcleos menos um, com prioridade
+        # abaixo do normal: quando o computador está livre, a conversão usa tudo; quando você usa outro programa,
+        # o sistema dá a vez a ele e a conversão fica mais leve.
+        TTS_MAX, FFMPEG_PARALELO = 32, max(1, min(8, (os.cpu_count() or 2) - 1))
+    elif leve:
         # Modo leve: um livro por vez, menos conexões de voz, um FFmpeg por vez e prioridade mínima.
         # Converte mais devagar, mas o computador e o app ficam livres.
-        TTS_CONEXOES, FFMPEG_PARALELO = 4, 1
+        TTS_CONEXOES, TTS_MAX, FFMPEG_PARALELO = 4, 4, 1
         _prioridade_baixa(minima=True)
     elif turbo:
-        # Modo turbo: mais conexões de voz, um FFmpeg por núcleo (até 8) e prioridade normal. Usa bem mais
-        # processador e memória; a transcrição por IA já usa a placa de vídeo (CUDA) quando existe.
-        TTS_CONEXOES, FFMPEG_PARALELO = 12, max(2, min(8, os.cpu_count() or 2))
+        # Modo turbo: começa com mais conexões de voz e pode chegar a 32, um FFmpeg por núcleo (até 8) e
+        # prioridade normal. Usa bem mais processador e memória.
+        TTS_CONEXOES, TTS_MAX, FFMPEG_PARALELO = 14, 32, max(2, min(8, os.cpu_count() or 2))
         _prioridade_baixa(normal=True)
-    _sem_tts = asyncio.Semaphore(TTS_CONEXOES)
+    # "max_connections" (opcional) fixa o teto das conexões de voz; "adaptive_connections": false desliga o ajuste
+    if config.get("max_connections"):
+        TTS_MAX = max(1, int(config["max_connections"]))
+        TTS_CONEXOES = min(TTS_CONEXOES, TTS_MAX)
+    _conexoes = _ControleConexoes(TTS_CONEXOES, min(TTS_MIN, TTS_CONEXOES), TTS_MAX,
+                                  adaptar=not leve and config.get("adaptive_connections", True) is not False)
     _sem_ffmpeg = asyncio.Semaphore(FFMPEG_PARALELO)
     _vagas = asyncio.Condition()
     _sem_traducao = asyncio.Semaphore(1 if leve else 6 if turbo else 3)

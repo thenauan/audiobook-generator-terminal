@@ -147,8 +147,6 @@
  "cli_sync_help": "create synced text for audiobook players",
  "cli_no_sync_help": "don't create synced text",
  "cli_yes_help": "no questions: use the options given and the last choices (or the defaults)",
- "cli_lite_help": "lite mode: one book at a time, leaves the computer free",
- "cli_turbo_help": "turbo mode: more connections and CPU, converts faster",
  "voice_unknown": "Unknown voice: {voice}. See the voice list without --voice.",
  "voice_ignored": "Voice {voice} doesn't narrate {language}: using {default}.",
  "format_needs_ffmpeg": "{format} needs FFmpeg: using MP3.",
@@ -179,5 +177,6 @@
  "cli_no_update_help": "don't check for a new version when starting",
  "files_hint_picker": "Press Enter (or o) to open the file picker again, or type/drag the files here (one or more per line; an empty line finishes).",
  "no_folder_picked": "No folder chosen in the picker.",
- "folder_hint_picker": "o opens the folder picker again, Enter uses the default folder, or type/drag a folder."
+ "folder_hint_picker": "o opens the folder picker again, Enter uses the default folder, or type/drag a folder.",
+ "n_connections": "{n} connections"
 }

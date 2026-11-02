@@ -147,8 +147,6 @@
  "cli_sync_help": "gerar texto sincronizado para audiobook players",
  "cli_no_sync_help": "não gerar texto sincronizado",
  "cli_yes_help": "sem perguntas: usa as opções dadas e as últimas escolhas (ou os padrões)",
- "cli_lite_help": "modo leve: um livro por vez, deixa o computador livre",
- "cli_turbo_help": "modo turbo: mais conexões e CPU, converte mais rápido",
  "voice_unknown": "Voz desconhecida: {voice}. Veja a lista de vozes sem --voice.",
  "voice_ignored": "A voz {voice} não narra em {language}: usando {default}.",
  "format_needs_ffmpeg": "{format} precisa do FFmpeg: usando MP3.",
@@ -179,5 +177,6 @@
  "cli_no_update_help": "não procurar versão nova ao abrir",
  "files_hint_picker": "Enter (ou o) abre o seletor de arquivos de novo; ou digite/arraste os arquivos para cá (um ou vários por linha; linha vazia termina).",
  "no_folder_picked": "Nenhuma pasta escolhida no seletor.",
- "folder_hint_picker": "o abre o seletor de pastas de novo, Enter usa a pasta padrão, ou digite/arraste uma pasta."
+ "folder_hint_picker": "o abre o seletor de pastas de novo, Enter usa a pasta padrão, ou digite/arraste uma pasta.",
+ "n_connections": "{n} conexões"
 }

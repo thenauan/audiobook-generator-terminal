@@ -147,8 +147,6 @@
  "cli_sync_help": "sesli kitap oynatıcıları için senkron metin oluştur",
  "cli_no_sync_help": "senkron metin oluşturma",
  "cli_yes_help": "soru yok: verilen seçenekleri ve son seçimleri (veya varsayılanları) kullanır",
- "cli_lite_help": "hafif mod: her seferinde bir kitap, bilgisayarı serbest bırakır",
- "cli_turbo_help": "turbo mod: daha fazla bağlantı ve işlemci, daha hızlı dönüştürür",
  "voice_unknown": "Bilinmeyen ses: {voice}. Ses listesini --voice olmadan görün.",
  "voice_ignored": "{voice} sesi {language} seslendirmiyor: {default} kullanılıyor.",
  "format_needs_ffmpeg": "{format} için FFmpeg gerekli: MP3 kullanılıyor.",
@@ -179,5 +177,6 @@
  "cli_no_update_help": "açılışta yeni sürüm denetleme",
  "files_hint_picker": "Dosya seçiciyi yeniden açmak için Enter'a (veya o'ya) basın ya da dosyaları buraya yazın/sürükleyin (her satıra bir veya birkaç; boş satır bitirir).",
  "no_folder_picked": "Seçicide klasör seçilmedi.",
- "folder_hint_picker": "o klasör seçiciyi yeniden açar, Enter varsayılan klasörü kullanır, ya da bir klasör yazın/sürükleyin."
+ "folder_hint_picker": "o klasör seçiciyi yeniden açar, Enter varsayılan klasörü kullanır, ya da bir klasör yazın/sürükleyin.",
+ "n_connections": "{n} bağlantı"
 }

@@ -38,7 +38,7 @@ import i18n  # noqa: E402
 import ui  # noqa: E402
 from i18n import t  # noqa: E402
 
-VERSAO = "1.5.1"
+VERSAO = "1.6.0"
 
 EXTENSOES = (".epub", ".pdf", ".mobi", ".azw", ".azw3", ".prc", ".txt")
 TOTAL_ETAPAS = 6
@@ -572,13 +572,13 @@ def escolher_formato(tem_ffmpeg, sugerido):
 NOME_ETAPA = {"translating": "engine_translating", "editing": "engine_preparing", "syncing": "engine_sync"}
 
 
-def converter(livros, formato, pasta, qualidade="voice", modo=None):
-    """`modo`: None, "lite" (um livro por vez, leve para o computador) ou "turbo" (usa mais CPU e conexões)."""
+def converter(livros, formato, pasta, qualidade="voice"):
+    """O motor roda no modo adaptável: conexões de voz e uso do processador se ajustam sozinhos às condições."""
     config = {
         "outputFolder": pasta, "file_format": formato, "fileType": formato, "audio_quality": qualidade,
         # Texto sincronizado com as frases e, dentro de cada frase, as palavras (cada uma com seu tempo)
         "sync_text_destination": "both", "sync_text_granularity": "both",
-        "lite": modo == "lite", "turbo": modo == "turbo",
+        "adaptive": True,
         "files": [{
             "id": l["id"], "path": os.path.abspath(l["caminho"]), "filename": l["arquivo"], "title": l["titulo"],
             "cache_id": l["cache_id"],
@@ -627,7 +627,10 @@ def converter(livros, formato, pasta, qualidade="voice", modo=None):
                 painel.atualizar(fid, pct=float(ev.get("progress") or 0), etapa=etapa, partes=partes)
             elif tipo == "speed":
                 bps = ev.get("bytesPerSec") or 0
-                painel.atualizar(fid, vel=(f"{bps / 1048576:.1f} MB/s" if bps >= 1048576 else f"{bps // 1024} KB/s") if bps else "")
+                vel = (f"{bps / 1048576:.1f} MB/s" if bps >= 1048576 else f"{bps // 1024} KB/s") if bps else ""
+                if vel and ev.get("connections"):  # quantas conexões o ajuste automático está usando agora
+                    vel += " · " + t("n_connections", n=ev["connections"])
+                painel.atualizar(fid, vel=vel)
             elif tipo == "done":
                 painel.atualizar(fid, pct=100.0, fim="ok")
                 resultados[fid].update(ok=True, arquivos=ev.get("paths") or [])
@@ -744,9 +747,6 @@ def _argumentos():
     sync.add_argument("--sync", dest="texto", action="store_true", default=None, help=t("cli_sync_help"))
     sync.add_argument("--no-sync", dest="texto", action="store_false", help=t("cli_no_sync_help"))
     parser.add_argument("-y", "--yes", action="store_true", help=t("cli_yes_help"))
-    modo = parser.add_mutually_exclusive_group()
-    modo.add_argument("--lite", dest="modo", action="store_const", const="lite", help=t("cli_lite_help"))
-    modo.add_argument("--turbo", dest="modo", action="store_const", const="turbo", help=t("cli_turbo_help"))
     parser.add_argument("--no-update-check", action="store_true", help=t("cli_no_update_help"))
     parser.add_argument("--version", action="version", version=f"Audiobook Generator (terminal) {VERSAO}")
     return parser.parse_args()
@@ -889,7 +889,7 @@ def main():
     ui.dica(t("ctrl_c_hint"))
     print()
     inicio = time.time()
-    resultados, cancelado = converter(livros, formato, pasta, qualidade, args.modo)
+    resultados, cancelado = converter(livros, formato, pasta, qualidade)
 
     print()
     concluidos = [l for l in livros if resultados[l["id"]]["ok"]]
