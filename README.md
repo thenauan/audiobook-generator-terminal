@@ -115,7 +115,7 @@ Translations live in `dados/i18n/<language>.json` (English is the base and the f
 | Step | What happens |
 |---|---|
 | 1. E-books | Opens the file picker (or uses the files from the command line, or files dragged into the terminal). Title, author, genre, subgenre, year, language and chapters are read automatically. |
-| 2. Each book | Shows what was detected and asks whether you want to edit it. Then: **translate** (to any of the 11 interface languages), **synced text** (yes/no) and **voice** (`o 3` plays voice 3 reading an excerpt of the book itself). The choices can be reused for the other books in the same language. |
+| 2. Each book | Shows what was detected and asks whether you want to edit it. Then: **translate** (to any of the 11 interface languages), **synced text** (yes/no — sentences and the words inside them, each with its timing) and **voice** (`o 3` plays voice 3 reading an excerpt of the book itself). The choices can be reused for the other books in the same language. |
 | 3. Format | M4B (default), MP3, MP3 per chapter, Opus, FLAC or WAV. |
 | 4. Folder | Opens the folder picker (default: `Documents/Audiobook Generator`). |
 | 5. Summary | Review everything before starting. |

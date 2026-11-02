@@ -38,7 +38,7 @@ import i18n  # noqa: E402
 import ui  # noqa: E402
 from i18n import t  # noqa: E402
 
-VERSAO = "1.5.0"
+VERSAO = "1.5.1"
 
 EXTENSOES = (".epub", ".pdf", ".mobi", ".azw", ".azw3", ".prc", ".txt")
 TOTAL_ETAPAS = 6
@@ -555,7 +555,8 @@ def converter(livros, formato, pasta, qualidade="voice", modo=None):
     """`modo`: None, "lite" (um livro por vez, leve para o computador) ou "turbo" (usa mais CPU e conexões)."""
     config = {
         "outputFolder": pasta, "file_format": formato, "fileType": formato, "audio_quality": qualidade,
-        "sync_text_destination": "both", "sync_text_granularity": "sentences",
+        # Texto sincronizado com as frases e, dentro de cada frase, as palavras (cada uma com seu tempo)
+        "sync_text_destination": "both", "sync_text_granularity": "both",
         "lite": modo == "lite", "turbo": modo == "turbo",
         "files": [{
             "id": l["id"], "path": os.path.abspath(l["caminho"]), "filename": l["arquivo"], "title": l["titulo"],
