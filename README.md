@@ -82,6 +82,7 @@ audiobook-generator *.epub --voice en-US-AndrewNeural --format m4b --no-sync --y
 | `--translate LANG` | translate the books (`en`, `es`, `pt`, `ru`, `ar`, `fr`, `it`, `tr`, `hi`, `zh`, `ur`) |
 | `--sync` / `--no-sync` | create (or not) synced text for audiobook players |
 | `-y`, `--yes` | no questions |
+| `--lite` / `--no-lite` | turn lite mode on or off (remembered; by default it depends on the computer) |
 | `-o`, `--output` | output folder |
 | `--lang` | interface language |
 
@@ -89,12 +90,23 @@ The app remembers your last voice (per language), format, quality, folder and sy
 
 ### Speed: adapts by itself
 
-There are no speed modes to choose — the conversion adapts to the conditions:
+By default the conversion is **adaptive** — it adapts to the conditions:
 
 - **Voice connections** start at 10 and adjust between 3 and 32: they go up while the voice service keeps up, and back off as soon as it slows down or returns errors. The progress line shows how many are in use.
 - **Processing** (volume levelling and building the file) uses all CPU cores but one, at below-normal priority: with the computer free the conversion takes everything; when you use other programs, the system gives them priority and the conversion gets lighter.
 - **M4B is encoded chapter by chapter in parallel**: in a 2h16 book, building the M4B went from 92 s to 16 s, and the whole conversion from 158 s to 87 s.
 - Retries no longer hold a connection while waiting, and the per-request timeout follows the real response time.
+
+### Lite mode on lighter computers
+
+When the app opens it checks the computer (CPU cores, memory and whether a laptop is on battery). On a lighter one — at least two of *4 cores or fewer*, *less than 8 GB* and *on battery*, or *2 cores or fewer* / *less than 4 GB* alone — it turns on **lite mode** by itself and tells you why and what changes:
+
+- one book at a time (the others wait in line);
+- 4 voice connections instead of adjusting between 3 and 32;
+- one audio step at a time and the lowest CPU priority — the conversion only uses what's left over;
+- same audio quality: slower, but the computer stays free.
+
+Choose yourself with `--lite` or `--no-lite`; the choice is remembered for next time.
 
 ### Audio quality
 

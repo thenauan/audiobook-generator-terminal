@@ -178,5 +178,16 @@
  "files_hint_picker": "Enter (ou o) abre o seletor de arquivos de novo; ou digite/arraste os arquivos para cá (um ou vários por linha; linha vazia termina).",
  "no_folder_picked": "Nenhuma pasta escolhida no seletor.",
  "folder_hint_picker": "o abre o seletor de pastas de novo, Enter usa a pasta padrão, ou digite/arraste uma pasta.",
- "n_connections": "{n} conexões"
+ "n_connections": "{n} conexões",
+ "battery_suffix": ", na bateria",
+ "cli_lite_help": "modo leve: um livro por vez e menos recursos (fica guardado para as próximas vezes)",
+ "cli_no_lite_help": "nunca usar o modo leve, mesmo num computador mais fraco (fica guardado para as próximas vezes)",
+ "lite_on_auto": "Modo leve ligado: este computador é mais leve ({cores} núcleos, {ram} GB de memória{battery}).",
+ "lite_on_chosen": "Modo leve ligado (você escolheu com --lite).",
+ "lite_what_changes": "O que muda em relação ao modo adaptável:",
+ "lite_change_books": "Um livro por vez: os outros esperam na fila",
+ "lite_change_voice": "4 conexões de voz, em vez de se ajustar entre 3 e 32",
+ "lite_change_cpu": "Uma etapa de áudio por vez e prioridade mínima do processador: a conversão só usa o que sobra",
+ "lite_change_result": "Mesma qualidade de áudio; a conversão fica mais lenta, mas o computador fica livre",
+ "lite_how_off": "Para usar o modo adaptável: --no-lite (fica guardado para as próximas vezes)"
 }

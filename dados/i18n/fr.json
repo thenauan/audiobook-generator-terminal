@@ -178,5 +178,16 @@
  "files_hint_picker": "Entrée (ou o) rouvre le sélecteur de fichiers ; ou saisissez/glissez les fichiers ici (un ou plusieurs par ligne ; une ligne vide termine).",
  "no_folder_picked": "Aucun dossier choisi dans le sélecteur.",
  "folder_hint_picker": "o rouvre le sélecteur de dossiers, Entrée utilise le dossier par défaut, ou saisissez/glissez un dossier.",
- "n_connections": "{n} connexions"
+ "n_connections": "{n} connexions",
+ "battery_suffix": ", sur batterie",
+ "cli_lite_help": "mode léger : un livre à la fois et moins de ressources (mémorisé pour la prochaine fois)",
+ "cli_no_lite_help": "ne jamais utiliser le mode léger, même sur un ordinateur modeste (mémorisé pour la prochaine fois)",
+ "lite_on_auto": "Mode léger activé : cet ordinateur est plus modeste ({cores} cœurs, {ram} Go de mémoire{battery}).",
+ "lite_on_chosen": "Mode léger activé (vous l'avez choisi avec --lite).",
+ "lite_what_changes": "Ce qui change par rapport au mode adaptatif :",
+ "lite_change_books": "Un livre à la fois : les autres attendent leur tour",
+ "lite_change_voice": "4 connexions vocales, au lieu de s'ajuster entre 3 et 32",
+ "lite_change_cpu": "Une étape audio à la fois et la priorité processeur la plus basse : la conversion n'utilise que ce qui reste",
+ "lite_change_result": "Même qualité audio ; la conversion est plus lente, mais l'ordinateur reste libre",
+ "lite_how_off": "Pour utiliser le mode adaptatif : --no-lite (mémorisé pour la prochaine fois)"
 }

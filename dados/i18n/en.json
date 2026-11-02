@@ -178,5 +178,16 @@
  "files_hint_picker": "Press Enter (or o) to open the file picker again, or type/drag the files here (one or more per line; an empty line finishes).",
  "no_folder_picked": "No folder chosen in the picker.",
  "folder_hint_picker": "o opens the folder picker again, Enter uses the default folder, or type/drag a folder.",
- "n_connections": "{n} connections"
+ "n_connections": "{n} connections",
+ "battery_suffix": ", on battery",
+ "cli_lite_help": "lite mode: one book at a time and fewer resources (remembered for next time)",
+ "cli_no_lite_help": "never use lite mode, even on a lighter computer (remembered for next time)",
+ "lite_on_auto": "Lite mode is on: this computer is lighter ({cores} cores, {ram} GB of memory{battery}).",
+ "lite_on_chosen": "Lite mode is on (you chose it with --lite).",
+ "lite_what_changes": "What changes compared with the adaptive mode:",
+ "lite_change_books": "One book at a time: the others wait in line",
+ "lite_change_voice": "4 voice connections, instead of adjusting between 3 and 32",
+ "lite_change_cpu": "One audio step at a time and the lowest CPU priority: the conversion only uses what's left over",
+ "lite_change_result": "Same audio quality; the conversion is slower, but the computer stays free",
+ "lite_how_off": "To use the adaptive mode instead: --no-lite (remembered for next time)"
 }

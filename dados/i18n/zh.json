@@ -178,5 +178,16 @@
  "files_hint_picker": "按 Enter（或 o）重新打开文件选择器；或在此输入/拖入文件（每行一个或多个；空行结束）。",
  "no_folder_picked": "选择器中没有选择文件夹。",
  "folder_hint_picker": "o 重新打开文件夹选择器，Enter 使用默认文件夹，或输入/拖入一个文件夹。",
- "n_connections": "{n} 个连接"
+ "n_connections": "{n} 个连接",
+ "battery_suffix": "，使用电池",
+ "cli_lite_help": "轻量模式：一次一本书、占用更少资源（下次仍然生效）",
+ "cli_no_lite_help": "从不使用轻量模式，即使电脑配置较低（下次仍然生效）",
+ "lite_on_auto": "轻量模式已开启：这台电脑配置较低（{cores} 核，{ram} GB 内存{battery}）。",
+ "lite_on_chosen": "轻量模式已开启（你用 --lite 选择了它）。",
+ "lite_what_changes": "与自适应模式相比的变化：",
+ "lite_change_books": "一次一本书：其他书排队等待",
+ "lite_change_voice": "4 个语音连接，而不是在 3 到 32 之间自动调整",
+ "lite_change_cpu": "一次一个音频步骤，处理器优先级最低：转换只使用剩余的资源",
+ "lite_change_result": "音质相同；转换更慢，但电脑保持流畅",
+ "lite_how_off": "如需使用自适应模式：--no-lite（下次仍然生效）"
 }

@@ -178,5 +178,16 @@
  "files_hint_picker": "Dosya seçiciyi yeniden açmak için Enter'a (veya o'ya) basın ya da dosyaları buraya yazın/sürükleyin (her satıra bir veya birkaç; boş satır bitirir).",
  "no_folder_picked": "Seçicide klasör seçilmedi.",
  "folder_hint_picker": "o klasör seçiciyi yeniden açar, Enter varsayılan klasörü kullanır, ya da bir klasör yazın/sürükleyin.",
- "n_connections": "{n} bağlantı"
+ "n_connections": "{n} bağlantı",
+ "battery_suffix": ", pilde",
+ "cli_lite_help": "hafif mod: her seferinde bir kitap ve daha az kaynak (sonraki sefer için hatırlanır)",
+ "cli_no_lite_help": "hafif modu hiç kullanma, daha zayıf bir bilgisayarda bile (sonraki sefer için hatırlanır)",
+ "lite_on_auto": "Hafif mod açık: bu bilgisayar daha hafif ({cores} çekirdek, {ram} GB bellek{battery}).",
+ "lite_on_chosen": "Hafif mod açık (--lite ile siz seçtiniz).",
+ "lite_what_changes": "Uyarlanabilir moda göre neler değişir:",
+ "lite_change_books": "Her seferinde bir kitap: diğerleri sırada bekler",
+ "lite_change_voice": "3 ile 32 arasında ayarlanmak yerine 4 ses bağlantısı",
+ "lite_change_cpu": "Her seferinde bir ses aşaması ve en düşük işlemci önceliği: dönüştürme yalnızca artanı kullanır",
+ "lite_change_result": "Aynı ses kalitesi; dönüştürme daha yavaş, ama bilgisayar serbest kalır",
+ "lite_how_off": "Uyarlanabilir modu kullanmak için: --no-lite (sonraki sefer için hatırlanır)"
 }
