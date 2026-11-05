@@ -32,13 +32,37 @@ def safe_name(text: str) -> str:
     return re.sub(r'[\\/*?:\'"<>|]', "", text or "").strip() or "texto_sincronizado"
 
 
+def _tempo_lrc(segundos: float) -> str:
+    centesimos = int(round(float(segundos) * 100))
+    return f"{centesimos // 6000:02d}:{(centesimos // 100) % 60:02d}.{centesimos % 100:02d}"
+
+
+def _lrc_frases_e_palavras(segmentos: List[Dict[str, Any]], palavras: List[Dict[str, Any]]) -> List[str]:
+    """LRC estendido: uma linha por frase e o tempo de cada palavra dentro dela ([tempo] <tempo>palavra <tempo>palavra).
+    Quem não entende as marcas <...> mostra as frases do mesmo jeito."""
+    linhas, p = [], 0
+    ordenadas = sorted(palavras, key=lambda w: float(w["start"]))
+    for i, seg in enumerate(segmentos):
+        limite = float(segmentos[i + 1]["start"]) if i + 1 < len(segmentos) else float("inf")
+        da_frase = []
+        while p < len(ordenadas) and float(ordenadas[p]["start"]) < limite:
+            da_frase.append(ordenadas[p])
+            p += 1
+        corpo = " ".join(f"<{_tempo_lrc(w['start'])}>{str(w.get('text', '')).strip()}" for w in da_frase)
+        linhas.append(f"[{_tempo_lrc(seg['start'])}] {corpo or str(seg.get('text', '')).strip()}")
+    return linhas
+
+
 def build_lrc(sync_data: Dict[str, Any], title: str, author: str) -> str:
-    """LRC por frases, com título e autor reais no cabeçalho."""
+    """LRC com título e autor reais no cabeçalho: frases, palavras ou as duas, conforme o que foi gerado."""
     from ebook_audiobook_converter import export_sync_data_to_format
 
+    header = [f"[ti:{title}]", f"[ar:{author}]", "[re:Audiobook Generator]"]
+    segmentos, palavras = sync_data.get("segments") or [], sync_data.get("words") or []
+    if segmentos and palavras:
+        return "\n".join(header + _lrc_frases_e_palavras(segmentos, palavras)) + "\n"
     body = export_sync_data_to_format(sync_data, output_format="lrc", granularity="both")
     lines = [l for l in body.split("\n") if not re.match(r"^\[(ar|ti|re):", l)]
-    header = [f"[ti:{title}]", f"[ar:{author}]", "[re:Audiobook Generator]"]
     return "\n".join(header + [l for l in lines if l.strip()]) + "\n"
 
 
@@ -89,7 +113,19 @@ def embed_in_audio(audio_path: str, sync_data: Dict[str, Any], lrc_text: str) ->
         audio["LYRICS"] = lrc_text
         audio.save()
         return True
-    return False  # WAV e outros: sem lugar padrão para letra
+    if ext == ".wav":
+        # Sem lugar padrão no WAV: vai no bloco ID3 (o mesmo da capa), que só alguns players leem
+        from mutagen.id3 import USLT
+        from mutagen.wave import WAVE
+
+        audio = WAVE(audio_path)
+        if audio.tags is None:
+            audio.add_tags()
+        audio.tags.delall("USLT")
+        audio.tags.add(USLT(encoding=3, lang="und", desc="Audiobook", text=lrc_text))
+        audio.save()
+        return True
+    return False
 
 
 def generate_sync_text(

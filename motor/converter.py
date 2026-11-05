@@ -46,7 +46,7 @@ except Exception:  # biblioteca opcional: o caminho principal não depende dela
 from mutagen.mp3 import MP3
 from mutagen.id3 import ID3, TIT2, TALB, TRCK, TPE1, TPE2, TCON, APIC, CHAP, CTOC
 
-from audio_output import (aplicar_ano, FORMATOS, EXTENSOES_AUDIO, formato, qualidade, normalizar_capitulo, duracao_ms,
+from audio_output import (aplicar_ano, aplicar_extras, capa_bytes, FORMATOS, EXTENSOES_AUDIO, formato, qualidade, normalizar_capitulo, duracao_ms,
                           gerar_arquivo_unico, codificar_capitulo, obter_communicate)
 from book_structure import estruturar_livro, preparar_para_narracao, titulo_falado, limpar_texto, texto_completo, LivroIlegivel
 
@@ -661,18 +661,10 @@ def embutir_capa_id3(audio, cover_base64):
     if not cover_base64:
         return
     try:
-        import base64
-        clean_b64 = str(cover_base64).strip()
-        mime = 'image/jpeg'
-        if clean_b64.startswith('data:'):
-            header, clean_b64 = clean_b64.split(',', 1)
-            if 'image/png' in header:
-                mime = 'image/png'
-            elif 'image/webp' in header:
-                mime = 'image/webp'
-            elif 'image/svg+xml' in header:
-                return
-        audio.tags.add(APIC(encoding=3, mime=mime, type=3, desc=u'Cover', data=base64.b64decode(clean_b64)))
+        dados, mime = capa_bytes(cover_base64)  # já em formato e tamanho seguros
+        if not dados or mime == 'image/svg+xml':
+            return
+        audio.tags.add(APIC(encoding=3, mime=mime, type=3, desc=u'Cover', data=dados))
     except Exception as e:
         emit({"type": "log", "message": f"Aviso ao embutir capa ID3: {e}"})
 
@@ -1013,10 +1005,15 @@ async def process_file(file_info, config):
                 await asyncio.to_thread(aplicar_tags_arquivo_unico, saida, titulo, autor, file_info.get("cover"), chapters_info, genero, narrador)
             gerados.append(saida)
         ano = str(file_info.get("year") or "").strip()
-        if ano:
-            for arquivo in gerados:
-                if os.path.splitext(arquivo)[1].lower() in EXTENSOES_AUDIO:
+        subgenero = str(file_info.get("subgenre") or "").strip()
+        for arquivo in gerados:
+            if os.path.splitext(arquivo)[1].lower() in EXTENSOES_AUDIO:
+                if ano:
                     await asyncio.to_thread(aplicar_ano, arquivo, ano)
+                try:
+                    await asyncio.to_thread(aplicar_extras, arquivo, autor, narrador, subgenero, idioma)
+                except Exception as e:
+                    emit({"type": "log", "message": f"Aviso: narrador/subgênero/idioma não gravados em {os.path.basename(arquivo)}: {e}"})
 
         # 6) Texto sincronizado: os tempos de cada frase vêm da própria síntese (sem transcrever o áudio)
         sync_text_info = None

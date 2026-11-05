@@ -81,6 +81,8 @@ audiobook-generator *.epub --voice en-US-AndrewNeural --format m4b --no-sync --y
 | `--quality` | `voice` (default), `standard`, `high` or `max` — see below |
 | `--translate LANG` | translate the books (`en`, `es`, `pt`, `ru`, `ar`, `fr`, `it`, `tr`, `hi`, `zh`, `ur`) |
 | `--sync` / `--no-sync` | create (or not) synced text for audiobook players |
+| `--sync-detail` | what the synced text keeps: `both` (default), `sentences` or `words` |
+| `--sync-save` | where to save it: `both` (default), `metadata` (only inside the audiobook) or `file` (only separate files) |
 | `-y`, `--yes` | no questions |
 | `--lite` / `--no-lite` | turn lite mode on or off (remembered; by default it depends on the computer) |
 | `-o`, `--output` | output folder |
@@ -107,6 +109,30 @@ When the app opens it checks the computer (CPU cores, memory and whether a lapto
 - same audio quality: slower, but the computer stays free.
 
 Choose yourself with `--lite` or `--no-lite`; the choice is remembered for next time.
+
+### What goes inside each format
+
+The app reads every finished file back and shows what was saved in it, warning about anything that couldn't be.
+
+| Format | Title, author, genre, year, narrator | Cover | Chapters | Synced text inside the file |
+|---|---|---|---|---|
+| **M4B** | ✔ | ✔ | ✔ | ✔ |
+| **MP3** | ✔ | ✔ | ✔ | ✔ |
+| **MP3 per chapter** | ✔ | ✔ | each file is a chapter | ✘ separate file only (the book isn't a single file) |
+| **Opus** | ✔ | ✔ | ✔ (`CHAPTERxxx` tags) | ✔ |
+| **FLAC** | ✔ | ✔ | ✔ (`CHAPTERxxx` tags) | ✔ |
+| **WAV** | title, author, album and genre almost everywhere; the rest in an ID3 block | only in some players (ID3 block) | only in some players (ID3 block) | ✘ separate file only |
+
+WAV has no standard place for a cover, chapters or text, so those depend on the player. Opus and FLAC keep tags in the standard way for those formats, but a player only shows them if it reads Opus/FLAC tags, and not every program does. Covers are converted to JPEG or PNG and reduced to at most 1400 px: huge covers made the file bigger than the audio and many players gave up on reading them.
+
+### Synced text
+
+When you choose to create synced text, you also decide:
+
+- **What it keeps:** sentences and words (default), sentences only or words only.
+- **Where it's saved:** inside the audiobook and in separate files (default), only inside the audiobook, or only in separate files (`.lrc`, `.srt`, `.sync.json`). Formats with no place for text inside the file always use separate files.
+
+With sentences and words, the text inside the audiobook is an extended LRC, with the timing of each word: `[00:02.56] <00:02.56>Once <00:02.75>upon <00:03.03>a`. Players that don't know those marks still show the sentences.
 
 ### Audio quality
 

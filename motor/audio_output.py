@@ -160,10 +160,38 @@ def duracao_ms(caminho: str) -> int:
         return 0
 
 
+CAPA_LADO_MAX = 1400       # px: mais que qualquer tela de player mostra
+CAPA_BYTES_MAX = 700_000   # acima disso a capa é reduzida (no Opus ela vira texto dentro das tags, 33% maior)
+_capa_pronta: Dict[int, Any] = {}
+
+
+def _capa_segura(dados: bytes, mime: str):
+    """Capa que todo player lê: JPEG ou PNG de tamanho razoável. WebP e outros formatos viram JPEG (o M4B não aceita
+    WebP e quase nenhum player mostra) e capas enormes são reduzidas: uma capa de 7 MB ficava maior que o áudio no
+    Opus, e muitos leitores desistem de tags desse tamanho."""
+    try:
+        import io
+        from PIL import Image
+        img = Image.open(io.BytesIO(dados))
+        real = {"JPEG": "image/jpeg", "PNG": "image/png"}.get(img.format or "")
+        if real and len(dados) <= CAPA_BYTES_MAX and max(img.size) <= CAPA_LADO_MAX:
+            return dados, real
+        img = img.convert("RGB")
+        img.thumbnail((CAPA_LADO_MAX, CAPA_LADO_MAX))
+        saida = io.BytesIO()
+        img.save(saida, "JPEG", quality=88, optimize=True)
+        return saida.getvalue(), "image/jpeg"
+    except Exception:
+        return dados, mime  # sem Pillow, ou imagem que ele não abre: vai como veio
+
+
 def capa_bytes(cover_base64: Optional[str]):
-    """(bytes, mime) da capa em base64/data URL, ou (None, None)."""
+    """(bytes, mime) da capa em base64/data URL, já em formato e tamanho seguros, ou (None, None)."""
     if not cover_base64:
         return None, None
+    chave = hash(str(cover_base64))
+    if chave in _capa_pronta:
+        return _capa_pronta[chave]
     try:
         dados = str(cover_base64).strip()
         mime = "image/jpeg"
@@ -172,9 +200,23 @@ def capa_bytes(cover_base64: Optional[str]):
             for m in ("image/png", "image/webp", "image/svg+xml"):
                 if m in cabecalho:
                     mime = m
-        return base64.b64decode(dados), mime
+        resultado = _capa_segura(base64.b64decode(dados), mime)
     except Exception:
-        return None, None
+        resultado = (None, None)
+    _capa_pronta.clear()  # guarda só a do livro atual (a mesma capa vai em cada capítulo)
+    _capa_pronta[chave] = resultado
+    return resultado
+
+
+def _dimensoes_capa(dados: bytes):
+    """(largura, altura, bits por pixel) da imagem; (0, 0, 0) se não der para saber."""
+    try:
+        import io
+        from PIL import Image
+        img = Image.open(io.BytesIO(dados))
+        return img.width, img.height, {"1": 1, "L": 8, "P": 8, "RGB": 24, "RGBA": 32, "CMYK": 32}.get(img.mode, 24)
+    except Exception:
+        return 0, 0, 0
 
 
 def _ffmetadata(caminho: str, titulo: str, autor: str, genero: Optional[str], narrador: Optional[str], capitulos: List[Dict[str, Any]]):
@@ -220,8 +262,74 @@ def aplicar_ano(caminho: str, ano: Optional[str]) -> None:
             audio = FLAC(caminho) if ext == ".flac" else OggOpus(caminho)
             audio["DATE"] = ano
             audio.save()
+        elif ext == ".wav":
+            from mutagen.id3 import TDRC
+            from mutagen.wave import WAVE
+            audio = WAVE(caminho)
+            if audio.tags is None:
+                audio.add_tags()
+            audio.tags.add(TDRC(encoding=3, text=ano))
+            audio.save()
     except Exception:
         pass  # o ano é um detalhe: nunca falha a conversão por causa dele
+
+
+def aplicar_extras(caminho: str, autor: Optional[str] = None, narrador: Optional[str] = None,
+                   subgenero: Optional[str] = None, idioma: Optional[str] = None) -> None:
+    """Narrador, subgênero e idioma no arquivo final, em cada formato:
+    MP3/WAV: TCOM, TIT1, TLAN · M4B: ©wrt, aART, tipo audiobook e campos livres · FLAC/Opus: NARRATOR, SUBGENRE, LANGUAGE."""
+    ext = os.path.splitext(caminho)[1].lower()
+    if ext in (".mp3", ".wav"):
+        from mutagen.id3 import ID3, ID3NoHeaderError, TCOM, TIT1, TLAN
+        if ext == ".wav":
+            from mutagen.wave import WAVE
+            audio = WAVE(caminho)
+            if audio.tags is None:
+                audio.add_tags()
+            tags = audio.tags
+        else:
+            try:
+                tags = ID3(caminho)
+            except ID3NoHeaderError:
+                tags = ID3()
+        if narrador:
+            tags.add(TCOM(encoding=3, text=str(narrador)))
+        if subgenero:
+            tags.add(TIT1(encoding=3, text=str(subgenero)))
+        if idioma:
+            tags.add(TLAN(encoding=3, text=str(idioma)))
+        if ext == ".wav":
+            audio.save()
+        else:
+            tags.save(caminho, v2_version=3)
+    elif ext in (".m4b", ".m4a", ".mp4"):
+        from mutagen.mp4 import MP4, MP4FreeForm
+        audio = MP4(caminho)
+        if audio.tags is None:
+            audio.add_tags()
+        audio.tags["stik"] = [2]  # tipo de mídia: audiobook
+        if autor:
+            audio.tags["aART"] = [str(autor)]
+        if narrador:
+            audio.tags["\xa9wrt"] = [str(narrador)]
+            audio.tags["----:com.apple.iTunes:NARRATOR"] = [MP4FreeForm(str(narrador).encode("utf-8"))]
+        if subgenero:
+            audio.tags["----:com.apple.iTunes:SUBGENRE"] = [MP4FreeForm(str(subgenero).encode("utf-8"))]
+        if idioma:
+            audio.tags["----:com.apple.iTunes:LANGUAGE"] = [MP4FreeForm(str(idioma).encode("utf-8"))]
+        audio.save()
+    elif ext in (".flac", ".opus", ".ogg"):
+        from mutagen.flac import FLAC
+        from mutagen.oggopus import OggOpus
+        audio = FLAC(caminho) if ext == ".flac" else OggOpus(caminho)
+        if narrador:
+            audio["NARRATOR"] = str(narrador)
+            audio["PERFORMER"] = str(narrador)
+        if subgenero:
+            audio["SUBGENRE"] = str(subgenero)
+        if idioma:
+            audio["LANGUAGE"] = str(idioma)
+        audio.save()
 
 
 def _tempo_capitulo(ms: int) -> str:
@@ -246,7 +354,7 @@ def aplicar_tags_vorbis(caminho: str, titulo: str, autor: str, genero: Optional[
     audio["ALBUM"] = album or titulo
     audio["ARTIST"] = autor
     if genero:
-        audio["GENRE"] = str(genero)
+        audio["GENRE"] = [g.strip() for g in str(genero).split(",") if g.strip()]
     if narrador:
         audio["PERFORMER"] = str(narrador)
     if faixa:
@@ -262,11 +370,41 @@ def aplicar_tags_vorbis(caminho: str, titulo: str, autor: str, genero: Optional[
         pic.mime = mime
         pic.desc = "Cover"
         pic.data = dados
+        pic.width, pic.height, pic.depth = _dimensoes_capa(dados)
         if ext == ".flac":
             audio.clear_pictures()
             audio.add_picture(pic)
         else:
             audio["METADATA_BLOCK_PICTURE"] = [base64.b64encode(pic.write()).decode("ascii")]
+    audio.save()
+
+
+def aplicar_tags_wav(caminho: str, titulo: str, autor: str, genero: Optional[str], narrador: Optional[str],
+                     cover_base64: Optional[str], capitulos: Optional[List[Dict[str, Any]]] = None) -> None:
+    """WAV: o FFmpeg grava título, autor, álbum e gênero no bloco LIST INFO, o único que quase todo programa lê.
+    Capa e capítulos não existem nesse bloco: vão num bloco ID3 dentro do WAV, que só alguns players leem."""
+    from mutagen.id3 import APIC, CHAP, CTOC, TALB, TCON, TIT2, TPE1
+    from mutagen.wave import WAVE
+
+    audio = WAVE(caminho)
+    if audio.tags is None:
+        audio.add_tags()
+    audio.tags.add(TIT2(encoding=3, text=titulo))
+    audio.tags.add(TALB(encoding=3, text=titulo))
+    audio.tags.add(TPE1(encoding=3, text=autor))
+    if genero:
+        audio.tags.add(TCON(encoding=3, text=str(genero)))
+    dados, mime = capa_bytes(cover_base64)
+    if dados and mime != "image/svg+xml":
+        audio.tags.add(APIC(encoding=3, mime=mime, type=3, desc="Cover", data=dados))
+    ids = []
+    for ch in capitulos or []:
+        cid = str(ch["id"]).encode("utf-8")
+        ids.append(cid)
+        audio.tags.add(CHAP(element_id=cid, start_time=int(ch["start_time"]), end_time=int(ch["end_time"]),
+                            sub_frames=[TIT2(encoding=3, text=str(ch["title"]))]))
+    if ids:
+        audio.tags.add(CTOC(element_id=b"toc", flags=3, child_element_ids=ids, sub_frames=[TIT2(encoding=3, text="Chapters")]))
     audio.save()
 
 
@@ -361,8 +499,10 @@ def gerar_arquivo_unico(saida: str, fmt: str, q: str, capitulos: List[Dict[str, 
         if res.returncode == 0:
             aplicar_tags_vorbis(saida, titulo, autor, genero, narrador, cover_base64, capitulos)
     else:
-        # MP3 (capítulos e capa entram depois via ID3) e WAV (só título/autor: o formato não guarda capítulos)
+        # MP3 (capítulos e capa entram depois via ID3) e WAV (capa e capítulos entram num bloco ID3, abaixo)
         res = rodar(base + ["-map", "0:a", "-map_metadata", "1", "-map_chapters", "-1"] + codec + [saida])
+        if res.returncode == 0 and fmt == "wav":
+            aplicar_tags_wav(saida, titulo, autor, genero, narrador, cover_base64, capitulos)
 
     if res.returncode != 0:
         raise RuntimeError(f"FFmpeg falhou ao gerar {FORMATOS[fmt]['ext']}: {res.stderr[-300:]}")

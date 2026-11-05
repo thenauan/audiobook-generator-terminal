@@ -38,7 +38,7 @@ import i18n  # noqa: E402
 import ui  # noqa: E402
 from i18n import t  # noqa: E402
 
-VERSAO = "1.7.0"
+VERSAO = "1.8.0"
 
 EXTENSOES = (".epub", ".pdf", ".mobi", ".azw", ".azw3", ".prc", ".txt")
 TOTAL_ETAPAS = 6
@@ -75,6 +75,14 @@ FORMATOS_SEM_FFMPEG = ("single", "multiple")  # sem FFmpeg, o MP3 sai juntando a
 FORMATOS_CLI = {"m4b": "m4b", "mp3": "single", "mp3-chapters": "multiple", "opus": "opus", "flac": "flac", "wav": "wav"}
 # "voice": do tamanho da voz de origem (metade de "high", mesmo som); as outras sobem a taxa
 QUALIDADES = ("voice", "standard", "high", "max")
+# Texto sincronizado: o que gerar (frases, palavras ou as duas) e onde guardar
+SEPARACOES = [("both", "sync_both", "sync_both_desc"), ("sentences", "sync_sentences", "sync_sentences_desc"),
+              ("words", "sync_words", "sync_words_desc")]
+DESTINOS_TEXTO = [("both", "where_both", "where_both_desc"), ("metadata", "where_metadata", "where_metadata_desc"),
+                  ("file", "where_file", "where_file_desc")]
+# Formatos com lugar padrão para o texto dentro do arquivo. No WAV não existe (só um bloco ID3 que poucos leem)
+# e no MP3 por capítulo o livro não é um arquivo só: nesses, o texto vai sempre em arquivo separado
+FORMATOS_COM_TEXTO = ("m4b", "single", "opus", "flac")
 
 with open(os.path.join(BASE, "dados", "vozes.json"), encoding="utf-8") as f:
     VOZES = json.load(f)  # [{c: ShortName, l: Locale, g: F|M}]
@@ -604,19 +612,36 @@ def escolher_voz(idioma, trecho, sugerida=None):
             genero, regiao = None, None
 
 
+def escolher_separacao(sugerida):
+    padrao = next((i for i, s in enumerate(SEPARACOES) if s[0] == sugerida), 0)
+    print()
+    ui.info(f"{ui.ICONE['texto']} " + t("sync_detail_q"))
+    return SEPARACOES[ui.escolher(t("prompt_option"), [(t(n), t(d)) for _, n, d in SEPARACOES], padrao=padrao)][0]
+
+
+def escolher_destino_texto(sugerido):
+    padrao = next((i for i, d in enumerate(DESTINOS_TEXTO) if d[0] == sugerido), 0)
+    print()
+    ui.info(f"{ui.ICONE['texto']} " + t("sync_where_q"))
+    return DESTINOS_TEXTO[ui.escolher(t("prompt_option"), [(t(n), t(d)) for _, n, d in DESTINOS_TEXTO], padrao=padrao)][0]
+
+
 def configurar_livros(livros, opcoes):
     """Informações, tradução, texto sincronizado e voz de cada livro. `opcoes`: o que veio da linha de comando
-    (sem_perguntas, voz, traduzir, texto) e as últimas escolhas salvas (config)."""
+    (sem_perguntas, voz, traduzir, texto, separacao) e as últimas escolhas salvas (config)."""
     config = opcoes["config"]
+    salva = config.get("separacao") if config.get("separacao") in (s[0] for s in SEPARACOES) else "both"
+    separacao_padrao = opcoes["separacao"] or salva
     voz_pedida = opcoes["voz"]
     idioma_voz_pedida = next((v["l"].split("-")[0] for v in VOZES if v["c"] == voz_pedida), None)
     texto_padrao = config.get("texto", True) if opcoes["texto"] is None else opcoes["texto"]
-    escolhas_por_idioma = {}  # idioma -> (traduzir, texto, voz), quando o usuário quer repetir
+    escolhas_por_idioma = {}  # idioma -> (traduzir, texto, separacao, voz), quando o usuário quer repetir
     for n, livro in enumerate(livros, 1):
         if opcoes["sem_perguntas"]:
             destino = opcoes["traduzir"]
             livro["traduzir"] = destino if destino and destino != livro["idioma"] else ""
             livro["texto"] = texto_padrao
+            livro["separacao"] = separacao_padrao
             idioma_narracao = livro["traduzir"] or livro["idioma"] or idioma_voz_pedida or i18n.atual
             livro["voz"] = voz_automatica(idioma_narracao, voz_pedida, config)
             continue
@@ -625,7 +650,7 @@ def configurar_livros(livros, opcoes):
         revisar_informacoes(livro)
         repetir = escolhas_por_idioma.get(livro["idioma"]) if livro["idioma"] else None
         if repetir:
-            livro["traduzir"], livro["texto"], livro["voz"] = repetir
+            livro["traduzir"], livro["texto"], livro["separacao"], livro["voz"] = repetir
             ui.ok(t("reusing_choices", language=nome_idioma_frase(livro["idioma"]),
                     translation=t("translate_to_lower", language=nome_idioma_frase(livro["traduzir"])) if livro["traduzir"] else t("without_translation"),
                     sync=t("with_sync") if livro["texto"] else t("without_sync"),
@@ -640,6 +665,9 @@ def configurar_livros(livros, opcoes):
             livro["texto"] = ui.sim_nao(f"{ui.ICONE['texto']} " + t("ask_sync"), padrao=texto_padrao)
         else:
             livro["texto"] = opcoes["texto"]
+        livro["separacao"] = separacao_padrao
+        if livro["texto"] and not opcoes["separacao"]:
+            livro["separacao"] = escolher_separacao(separacao_padrao)
         idioma_narracao = livro["traduzir"] or livro["idioma"] or idioma_voz_pedida or escolher_idioma_narracao()
         if voz_pedida:
             livro["voz"] = voz_automatica(idioma_narracao, voz_pedida, config)
@@ -648,7 +676,7 @@ def configurar_livros(livros, opcoes):
         restantes = [l for l in livros[n:] if l["idioma"] == livro["idioma"]]
         if livro["idioma"] and restantes and ui.sim_nao(
                 t("reuse_choices_q", n=len(restantes), language=nome_idioma_frase(livro["idioma"])), padrao=True):
-            escolhas_por_idioma[livro["idioma"]] = (livro["traduzir"], livro["texto"], livro["voz"])
+            escolhas_por_idioma[livro["idioma"]] = (livro["traduzir"], livro["texto"], livro["separacao"], livro["voz"])
 
 
 def nome_formato(formato):
@@ -668,13 +696,14 @@ def escolher_formato(tem_ffmpeg, sugerido):
 NOME_ETAPA = {"translating": "engine_translating", "editing": "engine_preparing", "syncing": "engine_sync"}
 
 
-def converter(livros, formato, pasta, qualidade="voice", leve=False):
+def converter(livros, formato, pasta, qualidade="voice", leve=False, destino_texto="both"):
     """Modo adaptável (conexões de voz e processador se ajustam sozinhos) ou, em computadores mais fracos,
     modo leve (um livro por vez, 4 conexões, uma etapa de áudio por vez e prioridade mínima)."""
+    destino = {"both": "both", "metadata": "metadata", "file": "library"}[destino_texto]  # nomes do motor
     config = {
         "outputFolder": pasta, "file_format": formato, "fileType": formato, "audio_quality": qualidade,
         # Texto sincronizado com as frases e, dentro de cada frase, as palavras (cada uma com seu tempo)
-        "sync_text_destination": "both", "sync_text_granularity": "both",
+        "sync_text_destination": destino,
         "lite": leve, "adaptive": not leve,
         "files": [{
             "id": l["id"], "path": os.path.abspath(l["caminho"]), "filename": l["arquivo"], "title": l["titulo"],
@@ -684,7 +713,10 @@ def converter(livros, formato, pasta, qualidade="voice", leve=False):
             "language": IDIOMAS.get(l["idioma"], {}).get("pt", "") if l["idioma"] else "", "voice": l["voz"],
             "translate": bool(l["traduzir"]), "fileType": formato, "file_format": formato, "cover": l["capa"],
             "generic_cover": True,  # e-book sem capa: o motor gera a capa genérica do app
-            "chapters": [], "generate_sync_text": l["texto"], "sync_text_destination": "both",
+            "narrator": nome_voz(next(v for v in VOZES if v["c"] == l["voz"]))[0],
+            "chapters": [], "generate_sync_text": l["texto"], "sync_text_destination": destino,
+            # Frases, palavras ou as duas (cada uma com seu tempo)
+            "sync_text_granularity": {"both": "both", "sentences": "sentences", "words": "words"}[l["separacao"]],
         } for l in livros],
     }
     cfg = os.path.join(tempfile.gettempdir(), f"audiobook_cli_{uuid.uuid4().hex[:8]}.json")
@@ -782,6 +814,48 @@ def converter(livros, formato, pasta, qualidade="voice", leve=False):
     return resultados, cancelado
 
 
+def metadados_gravados(caminho):
+    """O que está de fato gravado no arquivo final, lido de volta dele."""
+    import mutagen
+    audio = mutagen.File(caminho)
+    tags = audio.tags if audio is not None and audio.tags else {}
+    chaves = set(tags.keys())
+    ext = os.path.splitext(caminho)[1].lower()
+    if ext in (".mp3", ".wav"):
+        def tem(prefixo):
+            return any(k.startswith(prefixo) for k in chaves)
+        return {"title": tem("TIT2"), "author": tem("TPE1"), "genre": tem("TCON"), "year": tem("TDRC"), "cover": tem("APIC"),
+                "chapters": tem("CHAP"), "text": tem("USLT") or tem("SYLT"), "narrator": tem("TCOM")}
+    if ext in (".m4b", ".m4a"):
+        return {"title": "\xa9nam" in chaves, "author": "\xa9ART" in chaves, "genre": "\xa9gen" in chaves, "year": "\xa9day" in chaves,
+                "cover": "covr" in chaves, "chapters": bool(getattr(audio, "chapters", None)), "text": "\xa9lyr" in chaves,
+                "narrator": "\xa9wrt" in chaves}
+    chaves = {k.lower() for k in chaves}  # FLAC e Opus
+    return {"title": "title" in chaves, "author": "artist" in chaves, "genre": "genre" in chaves, "year": "date" in chaves,
+            "cover": bool(getattr(audio, "pictures", None)) or "metadata_block_picture" in chaves,
+            "chapters": "chapter001" in chaves, "text": "lyrics" in chaves, "narrator": "narrator" in chaves}
+
+
+def conferir_metadados(arquivo, livro, formato, destino_texto):
+    """Lê o arquivo pronto e mostra o que entrou nele; se faltar algo que deveria estar lá, avisa."""
+    try:
+        gravado = metadados_gravados(arquivo)
+    except Exception:
+        return
+    esperado = ["title", "author", "narrator", "cover"]
+    esperado += ["genre"] if livro["genero"] else []
+    esperado += ["year"] if livro["ano"] else []
+    esperado += ["chapters"] if formato != "multiple" and livro["capitulos"] > 1 else []
+    if livro["texto"] and formato in FORMATOS_COM_TEXTO and destino_texto != "file":
+        esperado.append("text")
+    ok = [t("meta_" + c) for c in esperado if gravado.get(c)]
+    faltando = [t("meta_" + c) for c in esperado if not gravado.get(c)]
+    if ok:
+        ui.dica("    " + t("meta_saved", items=", ".join(ok)))
+    if faltando:
+        ui.alerta(t("meta_missing", items=", ".join(faltando)))
+
+
 def confirmar_cancelamento(painel, padrao_sigint):
     """Pausa o painel (para ele não se redesenhar por cima da pergunta) e pergunta se cancela.
     Outro Ctrl+C durante a pergunta confirma o cancelamento."""
@@ -843,6 +917,8 @@ def _argumentos():
     sync = parser.add_mutually_exclusive_group()
     sync.add_argument("--sync", dest="texto", action="store_true", default=None, help=t("cli_sync_help"))
     sync.add_argument("--no-sync", dest="texto", action="store_false", help=t("cli_no_sync_help"))
+    parser.add_argument("--sync-detail", choices=[s[0] for s in SEPARACOES], help=t("cli_sync_detail_help"))
+    parser.add_argument("--sync-save", choices=[d[0] for d in DESTINOS_TEXTO], help=t("cli_sync_save_help"))
     parser.add_argument("-y", "--yes", action="store_true", help=t("cli_yes_help"))
     leve = parser.add_mutually_exclusive_group()
     leve.add_argument("--lite", dest="leve", action="store_true", default=None, help=t("cli_lite_help"))
@@ -933,7 +1009,7 @@ def main():
     # 2) Informações, tradução, texto sincronizado e voz de cada livro
     ui.etapa(2, TOTAL_ETAPAS, t("step_setup"), "voz")
     configurar_livros(livros, {"sem_perguntas": sem_perguntas, "voz": args.voice, "traduzir": args.translate,
-                               "texto": args.texto, "config": config})
+                               "texto": args.texto, "separacao": args.sync_detail, "config": config})
 
     # 3) Formato (sem FFmpeg, só MP3)
     ui.etapa(3, TOTAL_ETAPAS, t("step_format"), "formato")
@@ -952,6 +1028,20 @@ def main():
     qualidade = args.quality or (config.get("qualidade") if config.get("qualidade") in QUALIDADES else "voice")
     if args.format or sem_perguntas:
         ui.ok(nome_formato(formato))
+
+    # Onde guardar o texto sincronizado (depende do formato: nem todo arquivo tem lugar para ele)
+    destino_texto = "both"
+    if any(l["texto"] for l in livros):
+        salvo = config.get("destino_texto") if config.get("destino_texto") in (d[0] for d in DESTINOS_TEXTO) else "both"
+        if formato not in FORMATOS_COM_TEXTO:
+            destino_texto = "file"
+            ui.dica(t("sync_file_only", format=nome_formato(formato)))
+        elif args.sync_save:
+            destino_texto = args.sync_save
+        elif sem_perguntas:
+            destino_texto = salvo
+        else:
+            destino_texto = escolher_destino_texto(salvo)
 
     # 4) Pasta
     ui.etapa(4, TOTAL_ETAPAS, t("step_folder"), "pasta")
@@ -972,7 +1062,8 @@ def main():
         print(f"  {ui.destaque(ui.ICONE['item'])} {ui.negrito(l['titulo'])} {ui.suave('— ' + l['autor'])}")
         detalhes = [t("summary_voice", name=voz[0], details=voz[1]),
                     t("translate_to_lower", language=nome_idioma_frase(l["traduzir"])) if l["traduzir"] else t("without_translation"),
-                    t("with_sync") if l["texto"] else t("without_sync")]
+                    t("with_sync") + f" ({t(next(n for c, n, _ in SEPARACOES if c == l['separacao'])).lower()}; "
+                    f"{t(next(n for c, n, _ in DESTINOS_TEXTO if c == destino_texto)).lower()})" if l["texto"] else t("without_sync")]
         print("    " + ui.suave(" · ".join(detalhes)))
     print("  " + ui.suave(t("summary_format_folder", format=nome_formato(formato), folder=pasta)))
     if not sem_perguntas and not ui.sim_nao(t("start_q"), padrao=True):
@@ -984,7 +1075,9 @@ def main():
     for l in livros:
         vozes_salvas[l["voz"].split("-")[0]] = l["voz"]
     config.update({"vozes": vozes_salvas, "formato": formato, "qualidade": qualidade, "pasta": pasta,
-                   "texto": livros[-1]["texto"]})
+                   "texto": livros[-1]["texto"], "separacao": livros[-1]["separacao"]})
+    if any(l["texto"] for l in livros) and formato in FORMATOS_COM_TEXTO:
+        config["destino_texto"] = destino_texto
     salvar_config(config)
 
     # 6) Conversão
@@ -992,7 +1085,7 @@ def main():
     ui.dica(t("ctrl_c_hint"))
     print()
     inicio = time.time()
-    resultados, cancelado = converter(livros, formato, pasta, qualidade, modo_leve)
+    resultados, cancelado = converter(livros, formato, pasta, qualidade, modo_leve, destino_texto)
 
     print()
     concluidos = [l for l in livros if resultados[l["id"]]["ok"]]
@@ -1002,11 +1095,15 @@ def main():
         if r["ok"]:
             audio = next((a for a in r["arquivos"] if not re.search(r"\.(lrc|srt|vtt)$|\.sync\.json$", a, re.I)), None)
             ui.ok(f"{ui.negrito(l['titulo'])}  {ui.suave(audio or pasta)}")
+            if audio:
+                conferir_metadados(audio, l, formato, destino_texto)
         else:
             ui.falha(f"{l['titulo']}: {r['erro']}")
             if r["detalhes"]:
                 for linha in str(r["detalhes"]).splitlines()[:8]:
                     ui.dica("    " + linha)
+    if concluidos and formato == "wav":
+        ui.dica(t("wav_limits"))
     print()
     if concluidos:
         ui.ok(ui.sucesso(t("n_ready", done=len(concluidos), total=len(livros), minutes=f"{minutos:.1f}")))
