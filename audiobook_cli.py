@@ -38,7 +38,7 @@ import i18n  # noqa: E402
 import ui  # noqa: E402
 from i18n import t  # noqa: E402
 
-VERSAO = "1.9.0"
+VERSAO = "1.9.1"
 
 EXTENSOES = (".epub", ".pdf", ".mobi", ".azw", ".azw3", ".prc", ".txt")
 TOTAL_ETAPAS = 6

@@ -205,8 +205,21 @@ def _eh_nota(tag: Tag) -> bool:
     return any(k in tipo for k in ("footnote", "endnote", "rearnote", "doc-footnote", "doc-endnote", "noteref", "doc-noteref", "nota-rodape", "notas"))
 
 
+def _p_titulo(tag: Tag) -> bool:
+    """Parágrafo que é um título sem ser <h1>–<h6>: classe de título ou o texto todo em negrito (comum em
+    livros de poemas). Só os poemas usam essa marca; na prosa ele continua um parágrafo comum."""
+    texto = tag.get_text(" ", strip=True)
+    if not texto or len(texto) > 120:
+        return False
+    classe = " ".join(tag.get("class") or []).lower()
+    if re.search(r"tit|title|head|cabe", classe):
+        return True
+    fortes = tag.find_all(["b", "strong"])
+    return bool(fortes) and _chave(" ".join(f.get_text(" ") for f in fortes)) == _chave(texto)
+
+
 def _blocos_html(soup: BeautifulSoup) -> List[Tuple[str, str]]:
-    """Percorre o HTML em ordem e devolve [(tipo, texto)] com tipo 'p', 'h1'..'h6' ou 'anchor'."""
+    """Percorre o HTML em ordem e devolve [(tipo, texto)] com tipo 'p', 'pt' (parágrafo-título), 'h1'..'h6' ou 'anchor'."""
     for c in soup.find_all(string=lambda s: isinstance(s, Comment)):
         c.extract()
     for t in soup.find_all(["aside"]) + [t for t in soup.find_all(True) if _eh_nota(t)]:
@@ -248,7 +261,7 @@ def _blocos_html(soup: BeautifulSoup) -> List[Tuple[str, str]]:
             if nome in BLOCOS:
                 despejar()
                 andar(filho)
-                despejar(nome if re.fullmatch(r"h[1-6]", nome) else "p")
+                despejar(nome if re.fullmatch(r"h[1-6]", nome) else "pt" if nome == "p" and _p_titulo(filho) else "p")
             else:
                 andar(filho)
 
@@ -551,8 +564,11 @@ def _capitulos_epub(caminho: str, idioma: str) -> Tuple[List[Dict], Dict]:
             atual["doc"] = valor
         if inicio is not None and usa_sumario:
             capitulos.append(atual)
-            atual = {"titulo": inicio["title"], "blocos": [], "doc": atual["doc"], "depth": inicio["depth"]}
+            atual = {"titulo": inicio["title"], "blocos": [], "doc": atual["doc"], "depth": inicio["depth"], "frag": inicio["frag"],
+                     "doc_inicio": valor if tipo == "doc" else atual["doc"]}
             continue
+        if tipo == "doc" and not usa_sumario:
+            atual["blocos"].append(("doc", valor))  # começo de arquivo: num livro de poemas, costuma abrir um poema
         if tipo in ("doc", "anchor") or pulando:
             continue
         atual["blocos"].append((tipo, valor))
@@ -561,7 +577,45 @@ def _capitulos_epub(caminho: str, idioma: str) -> Tuple[List[Dict], Dict]:
     if not usa_sumario:
         blocos = [b for c in capitulos for b in c["blocos"]]
         return _capitulos_por_titulos(blocos, idioma, titulo_livro), livro
-    return _finalizar(capitulos, idioma, titulo_livro), livro
+    if _eh_poesia([b for c in capitulos for b in c["blocos"]]):
+        # Poemas: um capítulo do sumário com vários poemas marcados (uma seção) é dividido neles
+        poemas = []
+        for c in capitulos:
+            sub = _dividir_poemas(c["blocos"], so_marcas=True)
+            if len(sub) >= 2:
+                if c.get("titulo") and not (sub[0]["titulo"] and _chave(sub[0]["titulo"]) == _chave(c["titulo"])):
+                    poemas.append({"titulo": c["titulo"], "blocos": []})  # a seção abre os poemas dela
+                poemas.extend(sub)
+            else:
+                poemas.append(dict(c, poema=True))
+        return _finalizar(poemas, idioma, titulo_livro, poesia=True), livro
+    return _finalizar(_juntar_subtitulos(capitulos), idioma, titulo_livro), livro
+
+
+def _juntar_subtitulos(capitulos: List[Dict]) -> List[Dict]:
+    """Sumário com capítulos e subtítulos: uma entrada mais funda que aponta para dentro do mesmo arquivo de um
+    capítulo que tem texto próprio antes dela é um subtítulo, e volta para dentro do capítulo (com o título lido no
+    meio do texto). Se o pai é só uma divisória ("Parte Um", sem texto) ou o filho é outro arquivo, o filho é capítulo."""
+    saida: List[Dict] = []
+    pilha: List[Dict] = []  # {"depth", "destino", "junta"}
+    for c in capitulos:
+        d = c.get("depth")
+        if d is None:
+            saida.append(c)
+            continue
+        while pilha and pilha[-1]["depth"] >= d:
+            pilha.pop()
+        pai = pilha[-1] if pilha else None
+        if pai is not None and c.get("frag") and c.get("doc_inicio") == pai["destino"].get("doc_inicio"):
+            if pai["junta"] is None:  # decide no primeiro filho: o pai tem texto próprio antes dele?
+                pai["junta"] = len(_texto(pai["destino"])) >= 300
+            if pai["junta"]:
+                pai["destino"]["blocos"].extend(c["blocos"])
+                pilha.append({"depth": d, "destino": pai["destino"], "junta": True})
+                continue
+        saida.append(c)
+        pilha.append({"depth": d, "destino": c, "junta": None})
+    return saida
 
 
 # ---------------------------------------------------------------------------------------------
@@ -597,11 +651,31 @@ def _candidato_titulo(texto: str, eh_h: bool) -> Optional[Tuple[str, Optional[in
 
 def _capitulos_por_titulos(blocos: List[Tuple[str, str]], idioma: str, titulo_livro: str = "") -> List[Dict]:
     """Divide uma lista de blocos em capítulos usando títulos marcados (h1/h2) ou a heurística."""
-    paragrafos = [(k, t) for k, t in blocos if k != "anchor"]
-    # 1) Títulos HTML de nível alto, se houver vários
-    for nivel in (("h1",), ("h1", "h2"), ("h2",)):
+    # 0) Livro de poemas: um capítulo por poema. Sem como separar os poemas, fica inteiro (nenhum verso some)
+    if _eh_poesia(blocos):
+        poemas = _dividir_poemas(blocos)
+        if poemas:
+            return _finalizar(poemas, idioma, titulo_livro, poesia=True)
+        return _finalizar([{"titulo": None, "blocos": [b for b in blocos if b[0] not in ("anchor", "doc")]}], idioma,
+                          titulo_livro, poesia=True)
+    paragrafos = [(k, t) for k, t in blocos if k not in ("anchor", "doc")]
+    # 1) Títulos HTML de nível alto, se houver vários. Com h1 e h2, o h2 só vira capítulo quando cada h1 é só uma
+    #    divisória ("Parte Um" sem texto próprio); se o h1 tem texto antes do primeiro h2, o h2 é subtítulo dele
+    h1 = [i for i, (k, t) in enumerate(paragrafos) if k == "h1" and len(t) <= 120]
+    if len(h1) >= 2:
+        def texto_proprio(i):
+            fim = next((j for j in range(i + 1, len(paragrafos)) if paragrafos[j][0] in ("h1", "h2")), len(paragrafos))
+            return sum(len(t) for _, t in paragrafos[i + 1:fim])
+        titulos_h2 = [_chave(t) for k, t in paragrafos if k == "h2"]
+        # h2 que se repete ("Alice", "Bruno", "Alice"...) é o narrador da seção, não um capítulo
+        h2_repetido = len(titulos_h2) >= 3 and len(set(titulos_h2)) <= len(titulos_h2) * 0.6
+        niveis = [("h1", "h2")] if titulos_h2 and not h2_repetido and all(texto_proprio(i) < 300 for i in h1) else [("h1",)]
+    else:
+        niveis = []
+    niveis += [n for n in (("h1", "h2"), ("h2",)) if n not in niveis]
+    for nivel in niveis:
         idx = [i for i, (k, t) in enumerate(paragrafos) if k in nivel and len(t) <= 120]
-        if len(idx) >= 3:
+        if len(idx) >= (2 if nivel == ("h1",) else 3):
             caps = _cortar(paragrafos, idx)
             if sum(1 for c in caps if len(_texto(c)) > 500) >= 2:
                 return _finalizar(caps, idioma, titulo_livro)
@@ -672,13 +746,94 @@ def _cortar(paragrafos, inicios: List[int]) -> List[Dict]:
 
 
 def _texto(cap: Dict) -> str:
-    return "\n\n".join(t for k, t in cap["blocos"] if k not in ("anchor", "toc"))
+    return "\n\n".join(t for k, t in cap["blocos"] if k not in ("anchor", "toc", "doc"))
+
+
+# ---------------------------------------------------------------------------------------------
+# Poesia: livros de poemas soltos viram um capítulo por poema (título + poema)
+# ---------------------------------------------------------------------------------------------
+SEPARADOR_POEMA = re.compile(r"^\s*(?:[*~#◆◇•·⁂✦✧❖_=]\s*)+$")
+
+
+def _eh_poesia(blocos: List[Tuple[str, str]]) -> bool:
+    """Livro de versos: linhas curtas que quase nunca terminam em ponto. Prosa (mesmo com muito diálogo)
+    tem parágrafos longos ou frases terminadas em pontuação, e fica de fora."""
+    linhas = [l.strip() for k, t in blocos if k in ("p", "pt") for l in t.split("\n") if l.strip()]
+    linhas = [l for l in linhas if not SEPARADOR_POEMA.match(l)]
+    if len(linhas) < 12:
+        return False
+    tamanhos = sorted(len(l) for l in linhas)
+    mediana = tamanhos[len(tamanhos) // 2]
+    com_ponto = sum(1 for l in linhas if re.search(r"[.!?…][\"'”»’)]*$", l)) / len(linhas)
+    return mediana <= 48 and com_ponto <= 0.4
+
+
+def _titulo_de_poema(itens: List[Tuple[str, str]], i: int) -> bool:
+    """Linha solta (sem marcação de título) que abre um poema: curta, seguida de uma estrofe e logo depois
+    do fim de outro poema (ou do começo do livro/arquivo)."""
+    linha = itens[i][1].strip()
+    if "\n" in linha or len(linha) > 70 or len(linha.split()) > 10 or re.search(r"[,;:]$", linha):
+        return False
+    if not (linha[:1].isupper() or linha[:1].isdigit()):
+        return False
+    prox = next((x for x in itens[i + 1:] if x[0] != "doc"), None)
+    if not prox or prox[0] != "p" or "\n" not in prox[1].strip():
+        return False  # o título vem antes de uma estrofe (várias linhas)
+    if RE_TITULO_NUMERADO.match(linha) or RE_SO_NUMERO.match(linha) or _parece_maiusculo(linha):
+        return True
+    ant = itens[i - 1] if i > 0 else ("doc", "")
+    return ant[0] == "doc" or "\n" in ant[1].strip() or bool(SEPARADOR_POEMA.match(ant[1]))
+
+
+def _dividir_poemas(blocos: List[Tuple[str, str]], so_marcas: bool = False) -> List[Dict]:
+    """Um capítulo por poema. Abre um poema: um título marcado (h1–h6 ou parágrafo em negrito/classe de título),
+    um separador (***), o começo de um arquivo do EPUB e, sem nenhuma marcação no livro, uma linha curta antes
+    de uma estrofe. Poema sem título recebe o primeiro verso como título (no acabamento).
+    `so_marcas`: dentro de um capítulo do sumário, só títulos marcados e separadores dividem."""
+    itens = [(k, t) for k, t in blocos if k != "anchor"]
+    tem_marcas = any(k.startswith("h") or k == "pt" for k, _ in itens)
+    inicios: List[Tuple[int, Optional[str]]] = []
+    for i, (k, t) in enumerate(itens):
+        linha = t.strip()
+        if k == "doc":
+            if not so_marcas:
+                inicios.append((i, None))
+        elif (k.startswith("h") or k == "pt") and len(linha) <= 120:
+            inicios.append((i, None if SEPARADOR_POEMA.match(linha) else linha))
+        elif k == "p" and SEPARADOR_POEMA.match(linha):
+            inicios.append((i, None))
+        elif not so_marcas and not tem_marcas and k == "p" and _titulo_de_poema(itens, i):
+            inicios.append((i, linha))
+    if not inicios:
+        return []
+    poemas = []
+    abertura = [(k, t) for k, t in itens[:inicios[0][0]] if k != "doc"]
+    # Antes do primeiro poema: o que for só uma folha de rosto (título e autor) sai; o resto fica
+    if abertura and not (len(abertura) <= 3 and sum(len(t) for _, t in abertura) < 100 and not so_marcas):
+        poemas.append({"titulo": None, "blocos": abertura})
+    for n, (i, titulo) in enumerate(inicios):
+        fim = inicios[n + 1][0] if n + 1 < len(inicios) else len(itens)
+        conteudo = [(k, t) for k, t in itens[i + 1:fim] if k != "doc"]
+        if not conteudo and titulo is None:
+            continue  # começo de arquivo seguido de um título: o poema começa no título
+        poemas.append({"titulo": titulo, "blocos": conteudo, "poema": True})
+    return poemas if sum(1 for p in poemas if p["blocos"]) >= 2 else []
+
+
+def _titulo_do_primeiro_verso(texto: str) -> str:
+    verso = next((l.strip() for l in texto.split("\n") if re.search(r"\w", l)), "")
+    verso = re.sub(r"[\s,.;:!?…—–-]+$", "", verso)
+    if len(verso) > 60:
+        verso = verso[:60].rsplit(" ", 1)[0] + "…"
+    return verso
 
 
 # ---------------------------------------------------------------------------------------------
 # Acabamento: limpa títulos, tira páginas que não se narram, junta divisórias
 # ---------------------------------------------------------------------------------------------
-def _finalizar(capitulos: List[Dict], idioma: str, titulo_livro: str = "") -> List[Dict]:
+def _finalizar(capitulos: List[Dict], idioma: str, titulo_livro: str = "", poesia: bool = False) -> List[Dict]:
+    """`poesia`: um capítulo por poema. Poemas podem ser curtíssimos e repetir títulos ("Soneto"), o poema sem título
+    leva o primeiro verso como título (sem tirá-lo do poema) e um título sem texto (seção) abre os poemas seguintes."""
     lang = (idioma or "pt")[:2].lower()
     chave_livro = _chave(titulo_livro)
     palavra_cap = PALAVRA_CAPITULO.get(lang, "")
@@ -697,7 +852,10 @@ def _finalizar(capitulos: List[Dict], idioma: str, titulo_livro: str = "") -> Li
             if len(linha) > 90:
                 break
             chave_t, chave_l = _chave(titulo), _chave(linha)
-            mesmo = chave_l and (chave_l == chave_t or chave_l in chave_t or (chave_t and chave_t in chave_l and len(chave_l) <= len(chave_t) + 40))
+            if poesia:  # num poema, só o título repetido sai do texto (um verso pode conter o título: "Rio" / "Corre o rio")
+                mesmo = bool(chave_l) and chave_l == chave_t
+            else:
+                mesmo = chave_l and (chave_l == chave_t or chave_l in chave_t or (chave_t and chave_t in chave_l and len(chave_l) <= len(chave_t) + 40))
             if mesmo:
                 if len(chave_l) > len(chave_t) and k.startswith("h"):
                     titulo = formatar_titulo(linha)
@@ -711,15 +869,17 @@ def _finalizar(capitulos: List[Dict], idioma: str, titulo_livro: str = "") -> Li
                 continue
             break
 
+        if poesia and SEPARADOR_POEMA.match(titulo or "x"):
+            titulo = ""  # "***" no lugar do título: o poema não tem título (leva o primeiro verso)
         # Título só com número vira "Capítulo N"; o subtítulo (h2/h3 logo abaixo) entra no título
-        if RE_SO_NUMERO.match(titulo or ""):
+        if RE_SO_NUMERO.match(titulo or "") and not poesia:
             n = _valor_numero(titulo)
             titulo = titulo_generico(lang, n) if n is not None else (f"{palavra_cap} {titulo}" if palavra_cap else titulo)
         if extras:
             sub = " — ".join(e for e in extras if _chave(e) not in _chave(titulo))
             if sub:
                 titulo = f"{titulo} — {sub}" if titulo else sub
-        if not titulo and blocos:
+        if not titulo and blocos and not poesia:
             # Sem título: um primeiro parágrafo curto, sem ponto final, serve de título
             k, t = blocos[0]
             if _candidato_titulo(t, k.startswith("h")):
@@ -727,6 +887,11 @@ def _finalizar(capitulos: List[Dict], idioma: str, titulo_livro: str = "") -> Li
                 blocos.pop(0)
 
         texto = limpar_texto("\n\n".join(t for _, t in blocos))
+        if poesia and texto and (cap.get("poema") or not titulo):
+            if not titulo:
+                titulo = _titulo_do_primeiro_verso(texto)
+            elif RE_SO_NUMERO.match(titulo):  # poema só numerado ("V"): o número e o primeiro verso
+                titulo = f"{titulo.strip().rstrip('.')}. {_titulo_do_primeiro_verso(texto)}"
 
         # Páginas que não se narram
         if titulo and "gutenberg" in titulo.lower():
@@ -735,12 +900,13 @@ def _finalizar(capitulos: List[Dict], idioma: str, titulo_livro: str = "") -> Li
             continue
         if len(texto) < 3000 and COPYRIGHT_HINT.search(texto) and (not titulo or len(texto) < 1500 or "gutenberg" in texto.lower()):
             continue
-        if chave_livro and titulo and len(texto) < 600 and (_chave(titulo) in chave_livro or chave_livro in _chave(titulo)):
-            continue  # página de rosto: o título é o do livro e quase não há texto
-        if len(re.sub(r"\W", "", texto)) < 25:
+        if chave_livro and _chave(titulo or "") and len(texto) < (150 if poesia else 600) and (_chave(titulo) in chave_livro or chave_livro in _chave(titulo)):
+            continue  # página de rosto: o título é o do livro e quase não há texto (um poema com o nome do livro fica)
+        if len(re.sub(r"\W", "", texto)) < (8 if poesia else 25):
             # Divisória ("Parte um", "Livro II", "I – O Novo Mundo") sem texto: o título vai para o próximo capítulo.
             # Outras páginas vazias (dedicatória curta, mapa, página de rosto) simplesmente saem.
-            if titulo and _eh_divisoria(titulo):
+            # Num livro de poemas, todo título sem texto é uma seção que abre os poemas seguintes.
+            if titulo and (_eh_divisoria(titulo) or (poesia and not texto)):
                 prefixo_pendente = f"{prefixo_pendente} — {titulo}" if prefixo_pendente else titulo
             continue
         if prefixo_pendente:
@@ -749,12 +915,13 @@ def _finalizar(capitulos: List[Dict], idioma: str, titulo_livro: str = "") -> Li
         saida.append({"titulo": titulo, "conteudo": texto})
 
     # Sumário duplicado: um "capítulo" curto cujo título reaparece depois é uma entrada de sumário
+    # (num livro de poemas, títulos repetidos são normais: "Soneto", "Canção")
     vistos_depois = {}
     for i, c in enumerate(saida):
         vistos_depois.setdefault(_chave(c["titulo"] or ""), []).append(i)
     saida = [c for i, c in enumerate(saida)
-             if not (c["titulo"] and len(c["conteudo"]) < 400 and len(vistos_depois.get(_chave(c["titulo"]), [])) > 1
-                     and vistos_depois[_chave(c["titulo"])][-1] != i)]
+             if poesia or not (c["titulo"] and len(c["conteudo"]) < 400 and len(vistos_depois.get(_chave(c["titulo"]), [])) > 1
+                               and vistos_depois[_chave(c["titulo"])][-1] != i)]
 
     # Sem título: abertura (antes do primeiro capítulo) ou continuação
     for i, c in enumerate(saida):
@@ -916,6 +1083,24 @@ def _capitulos_txt(caminho: str, idioma: str) -> List[Dict]:
     m_fim = re.search(r"\*\*\*\s*END OF (?:THE|THIS) PROJECT GUTENBERG", texto, re.IGNORECASE)
     if m_ini:
         texto = texto[m_ini.end():m_fim.start() if m_fim else None]
+    # Poemas: os versos ficam em linhas próprias, e uma linha curta depois de 2+ linhas em branco é título
+    if _eh_poesia([("p", texto)]):
+        blocos, atual, brancos, antes = [], [], 0, 0
+        for l in texto.split("\n") + [""]:
+            if l.strip():
+                if not atual:
+                    antes = brancos
+                atual.append(l.strip())
+                brancos = 0
+            else:
+                if atual:
+                    blocos.append((antes, atual))
+                    atual = []
+                brancos += 1
+        titulos = {i for i, (b, ls) in enumerate(blocos) if b >= 2 and len(ls) == 1 and len(ls[0]) <= 80}
+        if len(titulos) < 2:
+            titulos = set()
+        return _capitulos_por_titulos([("h3" if i in titulos else "p", "\n".join(ls)) for i, (_, ls) in enumerate(blocos)], idioma)
     blocos_brutos = re.split(r"\n\s*\n", texto)
     if len(blocos_brutos) < 5 and texto.count("\n") > 20:
         blocos_brutos = texto.split("\n")  # um parágrafo por linha
