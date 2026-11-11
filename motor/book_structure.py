@@ -27,6 +27,7 @@ from typing import Dict, List, Optional, Tuple
 from urllib.parse import unquote
 
 from bs4 import BeautifulSoup, Comment, NavigableString, Tag
+from texto_falado import preparar_para_fala
 
 # ---------------------------------------------------------------------------------------------
 # Vocabulário
@@ -1023,6 +1024,14 @@ def preparar_para_narracao(texto: str, voz_ou_idioma: str = "pt", pronunciation_
         for orig, rep in itens:
             if orig and rep:
                 t = re.sub(rf"(?<!\w){re.escape(str(orig).strip())}(?!\w)", str(rep).strip(), t, flags=re.IGNORECASE)
+
+    # O que a voz leria ao pé da letra: placares, símbolos, notas, emojis... (depois do dicionário do usuário, que manda)
+    # Uma regra com defeito não pode derrubar a conversão: o trecho segue sem esses ajustes
+    try:
+        t = preparar_para_fala(t, lang)
+    except Exception as e:
+        import sys
+        print(f"Aviso: ajustes de fala não aplicados a um trecho ({type(e).__name__}: {e})", file=sys.stderr)
 
     # Pontuação que confunde a entonação
     t = t.replace("...", "…")

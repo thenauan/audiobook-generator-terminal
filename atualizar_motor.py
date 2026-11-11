@@ -9,7 +9,7 @@ import sys
 BASE = os.path.dirname(os.path.abspath(__file__))
 APP = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(BASE), "audiobook-generatior")
 MODULOS = ["converter.py", "audio_output.py", "book_structure.py", "extract_metadata.py", "sync_text_tools.py",
-           "ebook_audiobook_converter.py", "capa_generica.py"]
+           "ebook_audiobook_converter.py", "capa_generica.py", "texto_falado.py", "emojis_fala.json"]
 
 if not os.path.isfile(os.path.join(APP, "converter.py")):
     sys.exit(f"App não encontrado em {APP}")

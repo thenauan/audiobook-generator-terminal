@@ -332,6 +332,28 @@ def aplicar_extras(caminho: str, autor: Optional[str] = None, narrador: Optional
         audio.save()
 
 
+def metadados_gravados(caminho: str) -> Dict[str, bool]:
+    """O que está de fato gravado no arquivo pronto, lido de volta dele."""
+    import mutagen
+    audio = mutagen.File(caminho)
+    tags = audio.tags if audio is not None and audio.tags else {}
+    chaves = set(tags.keys())
+    ext = os.path.splitext(caminho)[1].lower()
+    if ext in (".mp3", ".wav"):
+        def tem(prefixo: str) -> bool:
+            return any(k.startswith(prefixo) for k in chaves)
+        return {"title": tem("TIT2"), "author": tem("TPE1"), "genre": tem("TCON"), "year": tem("TDRC"), "cover": tem("APIC"),
+                "chapters": tem("CHAP"), "text": tem("USLT") or tem("SYLT"), "narrator": tem("TCOM")}
+    if ext in (".m4b", ".m4a"):
+        return {"title": "\xa9nam" in chaves, "author": "\xa9ART" in chaves, "genre": "\xa9gen" in chaves, "year": "\xa9day" in chaves,
+                "cover": "covr" in chaves, "chapters": bool(getattr(audio, "chapters", None)), "text": "\xa9lyr" in chaves,
+                "narrator": "\xa9wrt" in chaves}
+    chaves = {k.lower() for k in chaves}  # FLAC e Opus
+    return {"title": "title" in chaves, "author": "artist" in chaves, "genre": "genre" in chaves, "year": "date" in chaves,
+            "cover": bool(getattr(audio, "pictures", None)) or "metadata_block_picture" in chaves,
+            "chapters": "chapter001" in chaves, "text": "lyrics" in chaves, "narrator": "narrator" in chaves}
+
+
 def _tempo_capitulo(ms: int) -> str:
     h, resto = divmod(int(ms), 3_600_000)
     m, resto = divmod(resto, 60_000)
@@ -423,7 +445,7 @@ def _m4b_em_partes(saida: str, q: str, capitulos: List[Dict[str, Any]], meta_pat
         res = _rodar(["ffmpeg", "-y", "-i", capitulos[i]["file"], "-map", "0:a", "-map_metadata", "-1"]
                      + argumentos_codec("m4b", q) + ["-f", "mp4", partes[i]])
         if res.returncode != 0:
-            raise RuntimeError(res.stderr[-300:])
+            raise RuntimeError(f"FFmpeg falhou ao gerar o capítulo: {res.stderr[-300:]}")
         with trava:
             feitos[0] += 1
             if ao_progresso:

@@ -68,6 +68,11 @@ def largura():
     return max(40, min(110, shutil.get_terminal_size((100, 30)).columns - 1))
 
 
+def largura_painel():
+    """Largura do painel de progresso: o terminal inteiro (uma coluna a menos, para a linha não quebrar)."""
+    return max(40, shutil.get_terminal_size((100, 30)).columns - 1)
+
+
 def visivel(t):
     """Largura do texto na tela (sem os códigos de cor; emojis e ideogramas ocupam 2 colunas)."""
     import re
@@ -284,25 +289,28 @@ class PainelProgresso:
         s = max(1, int(round(e["restante"])))
         return f"{s // 3600}h {(s % 3600) // 60:02d}m" if s >= 3600 else f"{s // 60}m {s % 60:02d}s" if s >= 60 else f"{s}s"
 
-    def _linha(self, livro):
+    def _linhas(self, livro):
+        """Duas linhas por livro, na largura toda do terminal: título, barra, % e tempo restante; embaixo,
+        a etapa, a contagem, a velocidade do download e as conexões. Nada passa da borda (senão a linha
+        quebra e o painel se desalinha ao ser redesenhado)."""
         e = self.estado[livro["id"]]
-        w = largura()
-        larg_titulo = min(28, max(14, w // 4))
+        w = largura_painel()
+        larg_titulo = min(48, max(14, w // 3))
         titulo = cortar(livro["titulo"], larg_titulo)
         titulo += " " * max(0, larg_titulo - visivel(titulo))
+        recuo = " " * 5
         if e["fim"] == "ok":
-            return "  " + sucesso(ICONE["ok"]) + " " + texto(titulo) + "  " + sucesso(t("done"))
+            return ["  " + sucesso(ICONE["ok"]) + " " + texto(titulo) + "  " + sucesso(t("done"))]
         if e["fim"] == "erro":
-            return "  " + erro(ICONE["erro"]) + " " + texto(titulo) + "  " + erro(cortar(e["etapa"], w - larg_titulo - 10))
-        n = max(8, min(24, w - larg_titulo - 30))  # barra menor em terminais estreitos
+            return ["  " + erro(ICONE["erro"]) + " " + texto(titulo) + "  " + erro(cortar(e["etapa"], w - larg_titulo - 6))]
+        fim_linha = f"  {e['pct']:5.1f}%  " + self._restante(e)
+        n = max(8, min(40, w - larg_titulo - visivel(fim_linha) - 6))  # a barra usa o espaço que sobra
         cheio = int(round(e["pct"] / 100 * n))
         barra = destaque("━" * cheio) + suave("━" * (n - cheio))
-        resto = f"{e['pct']:5.1f}%  " + e["etapa"] + f" · {self._restante(e)}"
-        if e["partes"]:
-            resto += f" · {e['partes']}"
-        if e["vel"]:
-            resto += f" · {e['vel']}"
-        return "  " + destaque(ICONE["info"]) + " " + texto(titulo) + "  " + barra + " " + suave(cortar(resto, w - larg_titulo - n - 10))
+        linha1 = "  " + destaque(ICONE["info"]) + " " + texto(titulo) + "  " + barra + negrito(fim_linha)
+        detalhes = [e["etapa"]] + [x for x in (e["partes"], e["vel"]) if x]
+        linha2 = recuo + suave(cortar(" · ".join(detalhes), w - len(recuo) - 1))
+        return [linha1, linha2]
 
     def desenhar(self):
         with self.trava:
@@ -310,7 +318,14 @@ class PainelProgresso:
                 return
             if CORES and self.desenhado:
                 sys.stdout.write(f"\r\033[{self.desenhado}A")  # volta ao início do painel
+            total = 0
             for livro in self.livros:
-                sys.stdout.write("\033[2K" + self._linha(livro) + "\n" if CORES else self._linha(livro) + "\n")
+                for linha in self._linhas(livro):
+                    sys.stdout.write("\033[2K" + linha + "\n" if CORES else linha + "\n")
+                    total += 1
+            if CORES and total < self.desenhado:  # um livro terminou e o painel encolheu: limpa as linhas que sobraram
+                for _ in range(self.desenhado - total):
+                    sys.stdout.write("\033[2K\n")
+                sys.stdout.write(f"\033[{self.desenhado - total}A")
             sys.stdout.flush()
-            self.desenhado = len(self.livros)
+            self.desenhado = total

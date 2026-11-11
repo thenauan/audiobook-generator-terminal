@@ -38,7 +38,7 @@ import i18n  # noqa: E402
 import ui  # noqa: E402
 from i18n import t  # noqa: E402
 
-VERSAO = "1.8.0"
+VERSAO = "1.9.0"
 
 EXTENSOES = (".epub", ".pdf", ".mobi", ".azw", ".azw3", ".prc", ".txt")
 TOTAL_ETAPAS = 6
@@ -195,9 +195,25 @@ def _tk():
 
 
 TECLA_SELETOR = "o"  # reabre o seletor de arquivos/pasta depois de fechá-lo sem escolher nada
+TECLA_IDIOMA = "l"  # na pergunta dos arquivos, troca o idioma da interface
 
 
-def escolher_arquivos():
+def escolher_idioma_interface(config):
+    """Troca o idioma da interface e guarda a escolha; "idioma do sistema" apaga a escolha guardada."""
+    codigos = list(i18n.IDIOMAS)
+    opcoes = [(t("language_system"), IDIOMAS[i18n.idioma_do_sistema()]["nativo"])] + [(IDIOMAS[c]["nativo"], "") for c in codigos]
+    salvo = config.get("idioma")
+    i = ui.escolher(t("prompt_interface_language"), opcoes, padrao=codigos.index(salvo) + 1 if salvo in codigos else 0)
+    if i:
+        config["idioma"] = codigos[i - 1]
+    else:
+        config.pop("idioma", None)
+    salvar_config(config)
+    i18n.configurar(config.get("idioma"))
+    ui.ok(t("language_changed", language=IDIOMAS[i18n.atual]["nativo"]))
+
+
+def escolher_arquivos(config):
     """Seletor do sistema; se ele for fechado sem escolher nada, dá para abri-lo de novo (Enter ou o)
     ou digitar/arrastar os arquivos. Sem seletor (sem tkinter, SSH), só digitando."""
     while True:
@@ -214,11 +230,15 @@ def escolher_arquivos():
             ui.dica(t("files_hint_picker"))
         else:
             ui.dica(t("type_or_drag"))
+        ui.dica(t("files_hint_language", key=TECLA_IDIOMA))
         caminhos = []
         while True:
             linha = ui.perguntar(t("prompt_file")).strip()
             if raiz and linha.lower() == TECLA_SELETOR:
                 break  # abre o seletor de novo
+            if linha.lower() == TECLA_IDIOMA and not caminhos:
+                escolher_idioma_interface(config)
+                break  # volta à escolha dos arquivos, já no idioma novo
             if not linha:
                 if caminhos:
                     return caminhos
@@ -695,6 +715,68 @@ def escolher_formato(tem_ffmpeg, sugerido):
 # ---------------------------------------------------------------------------------------------
 NOME_ETAPA = {"translating": "engine_translating", "editing": "engine_preparing", "syncing": "engine_sync"}
 
+_ANCESTRAIS = None
+
+
+def _processos_ancestrais():
+    """Processos que abriram este (o shell, o Windows Terminal, o VS Code...), lidos uma vez."""
+    global _ANCESTRAIS
+    if _ANCESTRAIS is not None:
+        return _ANCESTRAIS
+    import ctypes
+    from ctypes import wintypes
+
+    class Entrada(ctypes.Structure):
+        _fields_ = [("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD), ("th32ProcessID", wintypes.DWORD),
+                    ("th32DefaultHeapID", ctypes.c_void_p), ("th32ModuleID", wintypes.DWORD), ("cntThreads", wintypes.DWORD),
+                    ("th32ParentProcessID", wintypes.DWORD), ("pcPriClassBase", ctypes.c_long), ("dwFlags", wintypes.DWORD),
+                    ("szExeFile", ctypes.c_wchar * 260)]
+    k32 = ctypes.windll.kernel32
+    k32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    foto = k32.CreateToolhelp32Snapshot(0x2, 0)  # TH32CS_SNAPPROCESS
+    pais = {}
+    try:
+        e = Entrada()
+        e.dwSize = ctypes.sizeof(Entrada)
+        ok = k32.Process32FirstW(foto, ctypes.byref(e))
+        while ok:
+            pais[e.th32ProcessID] = e.th32ParentProcessID
+            ok = k32.Process32NextW(foto, ctypes.byref(e))
+    finally:
+        k32.CloseHandle(foto)
+    vistos, pid = set(), os.getpid()
+    while pid and pid not in vistos:
+        vistos.add(pid)
+        pid = pais.get(pid)
+    _ANCESTRAIS = vistos
+    return vistos
+
+
+def janela_em_primeiro_plano():
+    """Se a janela deste terminal está em primeiro plano (não minimizada nem atrás de outra). Só no Windows;
+    None quando não dá para saber (macOS, Linux), e aí nada muda na conversão."""
+    if os.name != "nt" or not sys.stdin.isatty():
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+        u32, k32 = ctypes.windll.user32, ctypes.windll.kernel32
+        u32.GetForegroundWindow.restype = wintypes.HWND
+        k32.GetConsoleWindow.restype = wintypes.HWND
+        u32.GetAncestor.restype = wintypes.HWND
+        u32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
+        ativa, console = u32.GetForegroundWindow(), k32.GetConsoleWindow()
+        if not ativa:
+            return False
+        # Console clássico: a própria janela; Windows Terminal: a janela dona do console
+        if console and (ativa == console or ativa == u32.GetAncestor(console, 3)):  # GA_ROOTOWNER
+            return True
+        dono = wintypes.DWORD()
+        u32.GetWindowThreadProcessId(ativa, ctypes.byref(dono))
+        return dono.value in _processos_ancestrais()  # terminal do VS Code, Windows Terminal que abriu o shell...
+    except Exception:
+        return None
+
 
 def converter(livros, formato, pasta, qualidade="voice", leve=False, destino_texto="both"):
     """Modo adaptável (conexões de voz e processador se ajustam sozinhos) ou, em computadores mais fracos,
@@ -719,6 +801,10 @@ def converter(livros, formato, pasta, qualidade="voice", leve=False, destino_tex
             "sync_text_granularity": {"both": "both", "sentences": "sentences", "words": "words"}[l["separacao"]],
         } for l in livros],
     }
+    # Janela em primeiro plano: a conversão tem prioridade; minimizada, fica mais leve (só onde dá para saber)
+    plano = None if leve else janela_em_primeiro_plano()
+    if plano is not None:
+        config["foreground"] = plano
     cfg = os.path.join(tempfile.gettempdir(), f"audiobook_cli_{uuid.uuid4().hex[:8]}.json")
     with open(cfg, "w", encoding="utf-8") as f:
         json.dump(config, f, ensure_ascii=False)
@@ -762,11 +848,11 @@ def converter(livros, formato, pasta, qualidade="voice", leve=False, destino_tex
                 painel.atualizar(fid, vel=vel)
             elif tipo == "done":
                 painel.atualizar(fid, pct=100.0, fim="ok")
-                resultados[fid].update(ok=True, arquivos=ev.get("paths") or [])
+                resultados[fid].update(ok=True, arquivos=ev.get("paths") or [], erro_texto=ev.get("syncTextError"))
             elif tipo == "error":
                 erro = i18n.do_motor(ev.get("error"), ev.get("code"), ev.get("args")) or t("conversion_failed")
                 painel.atualizar(fid, fim="erro", etapa=erro)
-                resultados[fid].update(erro=erro, detalhes=ev.get("details"))
+                resultados[fid].update(erro=erro, detalhes=ev.get("details"), parte=ev.get("failedPart"))
             if time.time() - ultimo_desenho > 0.2 or tipo in ("done", "error"):
                 painel.desenhar()
                 ultimo_desenho = time.time()
@@ -784,9 +870,20 @@ def converter(livros, formato, pasta, qualidade="voice", leve=False, destino_tex
         pedido.set()
 
     signal.signal(signal.SIGINT, anotar_pedido)
+    ultima_olhada = time.time()
     try:
         while leitor.is_alive():
             leitor.join(0.3)
+            if plano is not None and time.time() - ultima_olhada >= 2:  # a janela mudou de plano: avisa o motor
+                ultima_olhada = time.time()
+                agora = janela_em_primeiro_plano()
+                if agora is not None and agora != plano:
+                    plano = agora
+                    try:
+                        proc.stdin.write(json.dumps({"foreground": plano}) + "\n")
+                        proc.stdin.flush()
+                    except (OSError, ValueError):
+                        pass
             if pedido.is_set():
                 if confirmar_cancelamento(painel, padrao_sigint):
                     cancelado = True
@@ -809,9 +906,56 @@ def converter(livros, formato, pasta, qualidade="voice", leve=False, destino_tex
         pass
     for fid, r in resultados.items():
         if not r["ok"] and not r["erro"]:
-            r["erro"] = t("conversion_cancelled") if cancelado else t("ended_early")
-            r["detalhes"] = "".join(erros_motor[-15:]).strip() or None
+            r["erro"] = t("conversion_cancelled") if cancelado else motivo_da_queda(erros_motor, proc.returncode)
+            r["detalhes"] = "".join(erros_motor[-40:]).strip() or None
     return resultados, cancelado
+
+
+def motivo_da_queda(linhas, codigo):
+    """Por que o motor parou sem dizer nada, a partir das últimas linhas de erro dele."""
+    texto = "".join(linhas)
+    falta = re.search(r"No module named '([^']+)'", texto)
+    if falta:
+        return t("err_missing_lib", falta.group(1).replace("_", "-"))
+    if "MemoryError" in texto:
+        return t("err_memory")
+    if re.search(r"No space left|ENOSPC", texto):
+        return t("err_disk_full")
+    ultima = next((l.strip() for l in reversed(linhas) if l.strip()), "")
+    return f"{t('ended_early')} ({ultima[:160] or codigo})"
+
+
+def salvar_detalhes_falhas(falhas):
+    """Guarda os detalhes técnicos das falhas num arquivo (no terminal fica só o motivo). Devolve o caminho."""
+    texto = "\n\n".join(f"{titulo}\n{erro}\n\n{detalhes}" for titulo, erro, detalhes in falhas if detalhes)
+    if not texto:
+        return None
+    caminho = os.path.join(os.path.dirname(caminho_config()), "last-error.log")
+    try:
+        os.makedirs(os.path.dirname(caminho), exist_ok=True)
+        with open(caminho, "w", encoding="utf-8") as f:
+            f.write(texto + "\n")
+        return caminho
+    except OSError:
+        return None
+
+
+def escolher_apos_falha(falhas, resultados, config):
+    """Pergunta o que fazer com os livros que falharam. Devolve se é para converter de novo."""
+    # Sem saber o idioma do livro, não dá para escolher uma voz que leia o texto original
+    sem_traducao = [l for l in falhas if resultados[l["id"]].get("parte") == "translation" and l["traduzir"] and l["idioma"]]
+    acoes = [("retry", t("retry_option"), t("retry_desc"))]
+    if sem_traducao:
+        acoes.append(("skip", t("skip_translation_option"), t("skip_translation_desc")))
+    acoes.append(("cancel", t("cancel_option"), t("cancel_desc")))
+    print()
+    acao = acoes[ui.escolher(t("failed_what_now"), [(a[1], a[2]) for a in acoes])][0]
+    if acao == "skip":
+        for l in sem_traducao:
+            l["traduzir"] = ""
+            l["voz"] = voz_automatica(l["idioma"], None, config)  # a voz era do idioma da tradução
+            ui.dica(t("skip_translation_voice", title=l["titulo"], voice=nome_voz(next(v for v in VOZES if v["c"] == l["voz"]))[0]))
+    return acao != "cancel"
 
 
 def metadados_gravados(caminho):
@@ -905,11 +1049,17 @@ def _idioma_pedido(argv):
     return None
 
 
+def _idioma_valido(valor):
+    if valor not in i18n.IDIOMAS:
+        raise argparse.ArgumentTypeError(", ".join(i18n.IDIOMAS))
+    return valor
+
+
 def _argumentos():
     parser = argparse.ArgumentParser(description=t("cli_description"))
     parser.add_argument("arquivos", nargs="*", help=t("cli_files_help"))
     parser.add_argument("-o", "--saida", "--output", help=t("cli_output_help"))
-    parser.add_argument("--lang", choices=i18n.IDIOMAS, help=t("cli_lang_help", langs=", ".join(i18n.IDIOMAS)))
+    parser.add_argument("--lang", nargs="?", const=True, type=_idioma_valido, metavar="LANG", help=t("cli_lang_help", langs=", ".join(i18n.IDIOMAS)))
     parser.add_argument("--voice", help=t("cli_voice_help"))
     parser.add_argument("--format", choices=list(FORMATOS_CLI), help=t("cli_format_help"))
     parser.add_argument("--quality", choices=QUALIDADES, help=t("cli_quality_help"))
@@ -965,11 +1115,11 @@ def avisar_atualizacao(verificacao, sem_perguntas):
 
 
 def main():
-    i18n.configurar(_idioma_pedido(sys.argv[1:]))
+    config = ler_config()
+    i18n.configurar(_idioma_pedido(sys.argv[1:]), config.get("idioma"))
     args = _argumentos()
     # A consulta à última versão começa já, em segundo plano, e é lida depois do banner
     verificacao = None if atualizacao.desligada(args.no_update_check) else atualizacao.Verificacao(VERSAO)
-    config = ler_config()
     sem_perguntas = args.yes
     if args.voice and not any(v["c"] == args.voice for v in VOZES):
         ui.falha(t("voice_unknown", voice=args.voice))
@@ -978,6 +1128,11 @@ def main():
     ui.banner("Audiobook Generator", VERSAO, t("app_tagline"))
     if avisar_atualizacao(verificacao, sem_perguntas):
         return 0
+    if not sem_perguntas and sys.stdin.isatty():
+        if args.lang is True:  # --lang sem valor: abre a lista
+            escolher_idioma_interface(config)
+        elif not args.lang and not config.get("idioma"):
+            ui.dica(t("language_hint", language=IDIOMAS[i18n.atual]["nativo"], key=TECLA_IDIOMA))
     tem_ffmpeg = verificar_dependencias()
     modo_leve = decidir_modo_leve(args.leve, config)
     if args.leve is not None:
@@ -985,7 +1140,7 @@ def main():
 
     # 1) Livros
     ui.etapa(1, TOTAL_ETAPAS, t("step_books"), "livros")
-    caminhos = args.arquivos or escolher_arquivos()
+    caminhos = args.arquivos or escolher_arquivos(config)
     while True:
         validos = []
         for c in caminhos:
@@ -1000,7 +1155,7 @@ def main():
         ui.falha(t("no_ebooks"))
         if args.arquivos or sem_perguntas or not sys.stdin.isatty():
             return 1
-        caminhos = escolher_arquivos()  # nada válido escolhido: escolhe de novo
+        caminhos = escolher_arquivos(config)  # nada válido escolhido: escolhe de novo
     livros = ler_livros(validos)
     if not livros:
         ui.falha(t("none_readable"))
@@ -1083,25 +1238,38 @@ def main():
     # 6) Conversão
     ui.etapa(6, TOTAL_ETAPAS, t("step_converting"), "converter")
     ui.dica(t("ctrl_c_hint"))
+    if not modo_leve and janela_em_primeiro_plano() is not None:
+        ui.dica(t("foreground_hint"))
     print()
     inicio = time.time()
-    resultados, cancelado = converter(livros, formato, pasta, qualidade, modo_leve, destino_texto)
-
-    print()
-    concluidos = [l for l in livros if resultados[l["id"]]["ok"]]
+    concluidos, pendentes = [], livros
+    while True:
+        resultados, cancelado = converter(pendentes, formato, pasta, qualidade, modo_leve, destino_texto)
+        print()
+        falhas = []
+        for l in pendentes:
+            r = resultados[l["id"]]
+            if r["ok"]:
+                concluidos.append(l)
+                audio = next((a for a in r["arquivos"] if not re.search(r"\.(lrc|srt|vtt)$|\.sync\.json$", a, re.I)), None)
+                ui.ok(f"{ui.negrito(l['titulo'])}  {ui.suave(audio or pasta)}")
+                if audio:
+                    conferir_metadados(audio, l, formato, destino_texto)
+                if r.get("erro_texto"):
+                    ui.alerta(t("sync_failed", r["erro_texto"]))
+            else:
+                falhas.append(l)
+                ui.falha(f"{l['titulo']}: {r['erro']}")
+        registro = salvar_detalhes_falhas([(l["titulo"], resultados[l["id"]]["erro"], resultados[l["id"]]["detalhes"]) for l in falhas])
+        if registro:
+            ui.dica(t("error_details_saved", path=registro))
+        if not falhas or cancelado or sem_perguntas or not sys.stdin.isatty():
+            break
+        if not escolher_apos_falha(falhas, resultados, config):
+            break
+        pendentes = falhas
+        print()
     minutos = (time.time() - inicio) / 60
-    for l in livros:
-        r = resultados[l["id"]]
-        if r["ok"]:
-            audio = next((a for a in r["arquivos"] if not re.search(r"\.(lrc|srt|vtt)$|\.sync\.json$", a, re.I)), None)
-            ui.ok(f"{ui.negrito(l['titulo'])}  {ui.suave(audio or pasta)}")
-            if audio:
-                conferir_metadados(audio, l, formato, destino_texto)
-        else:
-            ui.falha(f"{l['titulo']}: {r['erro']}")
-            if r["detalhes"]:
-                for linha in str(r["detalhes"]).splitlines()[:8]:
-                    ui.dica("    " + linha)
     if concluidos and formato == "wav":
         ui.dica(t("wav_limits"))
     print()

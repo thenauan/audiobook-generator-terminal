@@ -86,7 +86,7 @@ audiobook-generator *.epub --voice en-US-AndrewNeural --format m4b --no-sync --y
 | `-y`, `--yes` | no questions |
 | `--lite` / `--no-lite` | turn lite mode on or off (remembered; by default it depends on the computer) |
 | `-o`, `--output` | output folder |
-| `--lang` | interface language |
+| `--lang` | interface language for this run; with no value, opens the list and saves your choice |
 
 The app remembers your last voice (per language), format, quality, folder and synced-text choice and suggests them next time.
 
@@ -98,6 +98,9 @@ By default the conversion is **adaptive** — it adapts to the conditions:
 - **Processing** (volume levelling and building the file) uses all CPU cores but one, at below-normal priority: with the computer free the conversion takes everything; when you use other programs, the system gives them priority and the conversion gets lighter.
 - **M4B is encoded chapter by chapter in parallel**: in a 2h16 book, building the M4B went from 92 s to 16 s, and the whole conversion from 158 s to 87 s.
 - Retries no longer hold a connection while waiting, and the per-request timeout follows the real response time.
+- **Window in front (Windows):** while the terminal window is in front, the conversion runs at normal priority with up to 32 voice connections; minimized or behind other windows, it goes back to below-normal priority and up to 20 connections, so you can keep using the computer. The app says this when the conversion starts. On macOS and Linux there's no reliable way to know which window is in front, so nothing changes there.
+
+The progress panel uses the whole width of the terminal: one line with the title, bar, percentage and time left, and a second one with the current step, the count, the download speed and the voice connections.
 
 ### Lite mode on lighter computers
 
@@ -121,9 +124,9 @@ The app reads every finished file back and shows what was saved in it, warning a
 | **MP3 per chapter** | ✔ | ✔ | each file is a chapter | ✘ separate file only (the book isn't a single file) |
 | **Opus** | ✔ | ✔ | ✔ (`CHAPTERxxx` tags) | ✔ |
 | **FLAC** | ✔ | ✔ | ✔ (`CHAPTERxxx` tags) | ✔ |
-| **WAV** | title, author, album and genre almost everywhere; the rest in an ID3 block | only in some players (ID3 block) | only in some players (ID3 block) | ✘ separate file only |
+| **WAV** | only in some programs (Windows Explorer doesn't show the tags) | only in some players (ID3 block) | only in some players (ID3 block) | ✘ separate file only |
 
-WAV has no standard place for a cover, chapters or text, so those depend on the player. Opus and FLAC keep tags in the standard way for those formats, but a player only shows them if it reads Opus/FLAC tags, and not every program does. Covers are converted to JPEG or PNG and reduced to at most 1400 px: huge covers made the file bigger than the audio and many players gave up on reading them.
+WAV has no standard place for tags, a cover, chapters or text, so those depend on the program: Windows Explorer doesn't show WAV tags at all, and the synced text is always saved in a separate file. Opus and FLAC keep tags in the standard way for those formats, but a player only shows them if it reads Opus/FLAC tags, and not every program does. Covers are converted to JPEG or PNG and reduced to at most 1400 px: huge covers made the file bigger than the audio and many players gave up on reading them.
 
 ### Synced text
 
@@ -133,6 +136,8 @@ When you choose to create synced text, you also decide:
 - **Where it's saved:** inside the audiobook and in separate files (default), only inside the audiobook, or only in separate files (`.lrc`, `.srt`, `.sync.json`). Formats with no place for text inside the file always use separate files.
 
 With sentences and words, the text inside the audiobook is an extended LRC, with the timing of each word: `[00:02.56] <00:02.56>Once <00:02.75>upon <00:03.03>a`. Players that don't know those marks still show the sentences.
+
+To keep it easy to read, words show the book's punctuation (`Hi!`, `so:`, `—Come`), dialogue stays together ("—Are you coming? —she asked."), and very long sentences are split at `;`, `:`, dashes or commas instead of filling a whole paragraph. Names and abbreviations (Mr., Dr.) are never split.
 
 ### Audio quality
 
@@ -151,6 +156,8 @@ The language is detected from the system (Windows display language, macOS prefer
 python audiobook_cli.py --lang zh     # en, es, pt, ru, ar, fr, it, tr, hi, zh, ur
 ```
 
+You can also change it inside the app: close the file picker and type `l` at the file prompt, or run with `--lang` and no value. That choice is saved for next time, and the first option in the list goes back to the system language. `--lang es` and `AUDIOBOOK_LANG` apply to that run and take priority over the saved choice.
+
 Translations live in `dados/i18n/<language>.json` (English is the base and the fallback for any missing text).
 
 > **macOS:** the first time, Gatekeeper may block the `.command` file downloaded from the internet. Right-click → **Open**, or run `xattr -d com.apple.quarantine *.command *.sh` in the folder.
@@ -168,6 +175,16 @@ Translations live in `dados/i18n/<language>.json` (English is the base and the f
 | 6. Conversion | One progress bar per book, with stage, time remaining, narrated parts and real speed. |
 
 The cover comes from the e-book itself and chapters are detected automatically — there is no cover or advanced metadata editing, to keep things straight to the point.
+
+### When a conversion fails
+
+The app says why in plain words (no internet, a full disk, a file open in another program, a damaged e-book...) and saves the technical details to `last-error.log`, next to the settings file. Then you choose:
+
+- **Try again:** converts only the books that failed, keeping what was already narrated.
+- **Continue without translating:** shown when the translation failed. The book is narrated in its own language, with a voice of that language.
+- **Cancel:** stops there. Converting the book later still reuses what was narrated.
+
+If only the synced text fails, the audiobook is kept and the app tells you. With `--yes` nothing is asked: the app reports the failure and exits with code 2.
 
 ### Updates
 

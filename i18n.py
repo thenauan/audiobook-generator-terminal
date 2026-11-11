@@ -1,7 +1,7 @@
 """
 Idiomas da interface: os textos ficam em dados/i18n/<idioma>.json (o inglês é a base e a reserva).
 
-O idioma vem, nesta ordem, de --lang, da variável AUDIOBOOK_LANG ou do idioma do sistema
+O idioma vem, nesta ordem, de --lang, da variável AUDIOBOOK_LANG, da escolha guardada ou do idioma do sistema
 (Windows: idioma da interface; macOS: idiomas preferidos; Linux: LANGUAGE, LC_ALL, LC_MESSAGES, LANG).
 Se o idioma do sistema não está na lista, a interface abre em inglês.
 """
@@ -74,10 +74,10 @@ def idioma_do_sistema():
     return PADRAO
 
 
-def configurar(escolhido=None):
+def configurar(escolhido=None, salvo=None):
     """Define o idioma da interface. Devolve o código usado."""
     global atual, _textos, _reserva
-    codigo = _codigo(escolhido or os.environ.get("AUDIOBOOK_LANG"))
+    codigo = _codigo(escolhido or os.environ.get("AUDIOBOOK_LANG") or salvo)
     if codigo not in IDIOMAS:
         codigo = idioma_do_sistema()
     atual = codigo

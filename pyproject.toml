@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "audiobook-generator-terminal"
-version = "1.8.0"
+version = "1.9.0"
 description = "Convert e-books (EPUB, PDF, MOBI, AZW3, TXT) into audiobooks (M4B, MP3, Opus, FLAC, WAV) from the terminal, with neural voices, chapters, cover art, translation and synced text."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -47,3 +47,5 @@ audiobook_generator_terminal = "."
 
 [tool.setuptools.package-data]
 audiobook_generator_terminal = ["dados/*.json", "dados/i18n/*.json"]
+# Tabelas do motor (nomes dos emojis lidos em voz alta)
+"audiobook_generator_terminal.motor" = ["*.json"]

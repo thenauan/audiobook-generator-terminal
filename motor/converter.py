@@ -12,12 +12,14 @@ Fluxo de cada livro:
   6. Texto sincronizado (opcional) com o texto exato que foi narrado.
 """
 import asyncio
+import errno
 import hashlib
 import html
 import json
 import os
 import re
 import shutil
+import socket
 import sys
 import tempfile
 import subprocess
@@ -46,7 +48,7 @@ except Exception:  # biblioteca opcional: o caminho principal não depende dela
 from mutagen.mp3 import MP3
 from mutagen.id3 import ID3, TIT2, TALB, TRCK, TPE1, TPE2, TCON, APIC, CHAP, CTOC
 
-from audio_output import (aplicar_ano, aplicar_extras, capa_bytes, FORMATOS, EXTENSOES_AUDIO, formato, qualidade, normalizar_capitulo, duracao_ms,
+from audio_output import (aplicar_ano, aplicar_extras, capa_bytes, metadados_gravados, FORMATOS, EXTENSOES_AUDIO, formato, qualidade, normalizar_capitulo, duracao_ms,
                           gerar_arquivo_unico, codificar_capitulo, obter_communicate)
 from book_structure import estruturar_livro, preparar_para_narracao, titulo_falado, limpar_texto, texto_completo, LivroIlegivel
 
@@ -84,6 +86,34 @@ def emit(event):
     if event.get("type") == "error" and fid and "details" not in event:
         event = {**event, "details": f"Etapa: {_ETAPA.get(fid, 'início')}"}
     print(json.dumps(event, ensure_ascii=False), flush=True)
+
+
+def _motivo_falha(e):
+    """A causa de uma falha em palavras simples: (código, args, texto). None se a causa não é conhecida."""
+    baixo = str(e).lower()
+    numero, windows = getattr(e, "errno", None), getattr(e, "winerror", None)
+    if isinstance(e, MemoryError) or "out of memory" in baixo or "cannot allocate memory" in baixo:
+        return "err_memory", [], "Faltou memória para converter este livro. Feche outros programas e tente novamente: o que já foi narrado fica salvo."
+    if numero == errno.ENOSPC or windows in (39, 112) or "no space left" in baixo:
+        return "err_disk_full", [], "O disco ficou sem espaço durante a conversão. Libere espaço ou escolha outra pasta e tente novamente."
+    if windows in (32, 33):
+        return "err_file_in_use", [], "Um arquivo da conversão está aberto em outro programa (talvez um player). Feche esse programa e tente novamente."
+    if isinstance(e, PermissionError) or "permission denied" in baixo:
+        return "err_permission", [], "Sem permissão para gravar na pasta de destino. Escolha outra pasta e tente novamente."
+    if "ffmpeg não encontrado" in baixo:
+        return "err_ffmpeg_missing", [], "O FFmpeg não está instalado, e este formato precisa dele. Instale o FFmpeg ou escolha MP3."
+    rede = (ConnectionError, TimeoutError, asyncio.TimeoutError, socket.gaierror, urllib.error.URLError)
+    try:
+        import aiohttp
+        rede += (aiohttp.ClientError,)
+    except ImportError:
+        pass
+    if isinstance(e, rede):
+        return "err_network", [], "A conexão com a internet falhou. Verifique a internet e tente novamente: o que já foi narrado fica salvo."
+    if "ffmpeg falhou" in baixo:
+        ultima = next((l.strip() for l in reversed(str(e).splitlines()) if l.strip()), "")[:160]
+        return "err_ffmpeg", [ultima], f"O FFmpeg não conseguiu montar o áudio ({ultima}). Tente novamente ou escolha outro formato."
+    return None
 
 
 def _detalhes_erro(file_id, e, rastreio=None):
@@ -352,6 +382,7 @@ def _frases_de_palavras(texto, palavras):
     frase termina na pontuação final (ou na quebra de parágrafo) que vem depois dela. Assim uma única
     narração dá os tempos das palavras e das frases. Formato de saída: [início, duração, texto]."""
     frases, cursor, ini_txt, t0, t_fim = [], 0, None, 0.0, 0.0
+    livre = 0  # onde começa o texto da próxima frase (com o travessão ou a aspa que a abre)
     for off, dur, palavra in palavras:
         pos = texto.find(palavra, cursor) if palavra else -1
         if pos < 0 or pos - cursor > 200:  # palavra normalizada pelo serviço (número, sigla): segue em frente
@@ -360,19 +391,22 @@ def _frases_de_palavras(texto, palavras):
         else:
             fim = pos + len(palavra)
         if ini_txt is None:
-            ini_txt, t0 = pos, off
+            ini_txt, t0 = min(livre, pos), off
         t_fim = off + dur
         cursor = fim
         seguinte = re.match(r"[^\w]*", texto[cursor:]).group(0)
         depois = texto[cursor + len(seguinte):cursor + len(seguinte) + 1]
-        # Reticências seguidas de minúscula continuam a mesma frase ("e então... ela saiu")
-        so_reticencias = re.fullmatch(r"\s*(?:\.\.\.|…)\s*", seguinte) and depois.islower()
-        if (_FIM_FRASE.search(seguinte) and not so_reticencias) or "\n" in seguinte:
-            corte = cursor + len(seguinte.rstrip())
+        # Só a pontuação grudada na palavra fecha a frase: o travessão ou a aspa que abre a próxima fica com ela
+        grudado = re.match(r"\S*", seguinte).group(0)
+        # Seguida de minúscula ou de vírgula, a frase continua ("—Você vem? —perguntou ela", "«Sim!», disse ele",
+        # "e então... ela saiu")
+        continua = depois.islower() or re.sub(r"[\"'”’»)\]]+$", "", grudado).endswith((",", ";", ":"))
+        if (_FIM_FRASE.search(grudado) and not continua) or "\n" in seguinte:
+            corte = cursor + len(grudado)
             txt = re.sub(r"\s+", " ", texto[ini_txt:corte]).strip()
             if txt:
                 frases.append([round(t0, 3), round(t_fim - t0, 3), txt])
-            ini_txt = None
+            ini_txt, livre = None, corte
     if ini_txt is not None:
         txt = re.sub(r"\s+", " ", texto[ini_txt:]).strip()
         if txt:
@@ -762,6 +796,22 @@ def _escolher(file_info, cfg, *chaves, padrao=None):
     return padrao
 
 
+def _apagar_saida_anterior(caminhos, pasta_destino):
+    """Ao refazer um livro cujo áudio já saiu (texto que falhou), troca o arquivo em vez de criar uma cópia "(2)".
+    Só apaga áudio e pastas "(Audiobook)" que estão direto na pasta de destino."""
+    base = os.path.abspath(pasta_destino)
+    for c in caminhos or []:
+        c = os.path.abspath(str(c))
+        pasta = os.path.dirname(c)
+        try:
+            if os.path.dirname(pasta) == base and os.path.basename(pasta).endswith("(Audiobook)"):
+                shutil.rmtree(pasta, ignore_errors=True)
+            elif pasta == base and os.path.isfile(c) and os.path.splitext(c)[1].lower() in EXTENSOES_AUDIO:
+                os.remove(c)
+        except OSError as e:
+            emit({"type": "log", "message": f"Aviso: não foi possível trocar {c}: {e}"})
+
+
 async def process_file(file_info, config):
     file_id = file_info.get("id")
     try:
@@ -796,10 +846,13 @@ async def process_file(file_info, config):
         gerar_sync = _escolher(file_info, cfg, "generate_sync_text", padrao=True)
         gerar_sync = gerar_sync not in (False, "false", 0, "0")
         # Separação do texto sincronizado: frases, palavras ou as duas
-        separacao = _escolher(file_info, cfg, "sync_text_granularity", padrao="sentences")
+        separacao = _escolher(file_info, cfg, "sync_text_granularity", padrao="both")
         if separacao not in ("sentences", "words", "both"):
-            separacao = "sentences"
+            separacao = "both"
         com_palavras = gerar_sync and separacao in ("words", "both")
+        # "Seguir sem o texto" depois de uma falha: mantém a mesma chave do cache (com_palavras) para não narrar de novo
+        if file_info.get("skip_sync_text"):
+            gerar_sync = False
         is_multiple = fmt_saida == "multiple"
         ext_saida = FORMATOS[fmt_saida]["ext"]
 
@@ -964,6 +1017,7 @@ async def process_file(file_info, config):
             else:
                 progresso_final(fracao)
 
+        _apagar_saida_anterior(file_info.get("replace_outputs"), pasta_destino)
         progresso_final(0, 0, len(caps), "arquivos de capítulo gerados" if is_multiple else None,
                         "Gerando os arquivos dos capítulos" if is_multiple else None)
         if is_multiple:
@@ -1017,6 +1071,7 @@ async def process_file(file_info, config):
 
         # 6) Texto sincronizado: os tempos de cada frase vêm da própria síntese (sem transcrever o áudio)
         sync_text_info = None
+        sync_erro = None
         if gerar_sync:
             emit({"type": "progress", "fileId": file_id, "status": "syncing", "progress": 95, "message": "Gerando o texto sincronizado",
                   "code": "engine_sync"})
@@ -1036,6 +1091,12 @@ async def process_file(file_info, config):
                         lista_palavras.append({"start": round(deslocamento + ini, 3), "end": round(deslocamento + fim, 3), "text": txt, "chapter": i + 1})
                     if is_multiple:
                         deslocamento += dur
+                # Frases legíveis (sem parágrafos inteiros numa linha) e palavras com a pontuação do texto
+                from sync_text_tools import refinar_sincronia
+                try:
+                    segmentos, lista_palavras = refinar_sincronia(segmentos, lista_palavras)
+                except Exception as e:  # o refino é um extra: sem ele, o texto sai como veio da voz
+                    emit({"type": "log", "message": f"Aviso: frases do texto sincronizado não refinadas: {e}"})
                 # Só palavras: o texto é dividido palavra por palavra; ambas: frases + palavras de cada frase
                 if separacao == "words" and lista_palavras:
                     segmentos = []
@@ -1055,11 +1116,39 @@ async def process_file(file_info, config):
                     emit({"type": "log", "message": "Este formato não guarda texto nos metadados: o texto foi salvo na pasta da biblioteca."})
                 sync_text_info = {"content": resultado["content"], "format": resultado["format"], "wordCount": resultado["wordCount"],
                                   "files": resultado.get("files") or [],
-                                  "savedToLibrary": resultado["savedToLibrary"], "embedded": len(resultado["embedded"]) > 0}
+                                  "savedToLibrary": resultado["savedToLibrary"], "embedded": len(resultado["embedded"]) > 0,
+                                  "fallbackToLibrary": bool(resultado.get("fallbackToLibrary"))}
                 emit({"type": "progress", "fileId": file_id, "status": "syncing", "progress": 99, "message": "Texto sincronizado pronto",
                       "code": "engine_sync_done"})
             except Exception as se:
+                # O áudio já está pronto: o livro segue sem o texto, e quem chamou avisa o usuário
                 emit({"type": "log", "message": f"Aviso sincronização texto: {se}"})
+                sync_erro = f"{type(se).__name__}: {se}"
+                if file_info.get("strict_sync_text"):
+                    # Quem pediu quer escolher: o áudio está pronto e o cache continua, então tentar de novo ou seguir
+                    # sem o texto não narra outra vez
+                    emit({"type": "error", "fileId": file_id, "code": "err_sync_text", "args": [type(se).__name__, str(se)],
+                          "failedPart": "sync", "outputs": gerados,
+                          "error": f"O áudio ficou pronto, mas o texto sincronizado falhou ({sync_erro}). "
+                                   "Tente de novo ou siga sem o texto: o livro não será narrado outra vez.",
+                          "details": _detalhes_erro(file_id, se)})
+                    return
+
+        # Confere no arquivo pronto se tudo o que devia estar nele foi gravado (quem chamou avisa o usuário do que faltou)
+        faltando = []
+        primeiro_audio = next((p for p in gerados if os.path.splitext(p)[1].lower() in EXTENSOES_AUDIO), None)
+        if primeiro_audio:
+            try:
+                gravado = await asyncio.to_thread(metadados_gravados, primeiro_audio)
+                esperado = ["title", "author"]
+                esperado += ["narrator"] if narrador else []
+                esperado += ["genre"] if genero else []
+                esperado += ["year"] if ano else []
+                esperado += ["cover"] if capa_bytes(file_info.get("cover")) else []
+                esperado += ["chapters"] if not is_multiple and len(chapters_info) > 1 else []
+                faltando = [c for c in esperado if not gravado.get(c)]
+            except Exception as e:
+                emit({"type": "log", "message": f"Aviso: metadados não conferidos: {e}"})
 
         drive_folder_id = config.get("driveFolderId")
         if drive_folder_id and os.path.exists('token.json'):
@@ -1070,7 +1159,7 @@ async def process_file(file_info, config):
         dur_total = sum(duracao_ms(p) for p in gerados if os.path.exists(p) and os.path.splitext(p)[1].lower() in EXTENSOES_AUDIO)
         s = int(dur_total / 1000)
         dur_str = (f"{s // 3600}h {(s % 3600) // 60}m" if s >= 3600 else f"{s // 60}m" if s >= 60 else f"{s}s") if s else ""
-        emit({"type": "done", "fileId": file_id, "paths": gerados, "finalSize": f"{tamanho:.2f} MB", "finalDuration": dur_str, "syncText": sync_text_info})
+        emit({"type": "done", "fileId": file_id, "paths": gerados, "finalSize": f"{tamanho:.2f} MB", "finalDuration": dur_str, "syncText": sync_text_info, "syncTextError": sync_erro, "missingMetadata": faltando})
 
         # Concluído: o cache deste livro não é mais necessário
         shutil.rmtree(cache_dir, ignore_errors=True)
@@ -1078,17 +1167,21 @@ async def process_file(file_info, config):
         if os.path.isdir(base_cache) and not os.listdir(base_cache):
             os.rmdir(base_cache)
     except (FalhaSintese, FalhaTraducao) as e:
+        # "failedPart": a parte que dá para pular (o livro pode seguir sem traduzir)
         emit({"type": "error", "fileId": file_id, "error": str(e), "code": getattr(e, "codigo", None),
-              "args": getattr(e, "args_codigo", []), "details": _detalhes_erro(file_id, e)})
+              "args": getattr(e, "args_codigo", []), "details": _detalhes_erro(file_id, e),
+              "failedPart": "translation" if isinstance(e, FalhaTraducao) else None})
     except Exception as e:
         import traceback
         rastreio = traceback.format_exc()
         emit({"type": "log", "message": f"Erro em '{file_info.get('title', '')}': {rastreio[-1500:]}"})
         etapa = _ETAPA.get(file_id, "início")
-        emit({"type": "error", "fileId": file_id,
-              "error": f"A conversão falhou na etapa de {etapa} ({type(e).__name__}): {e}",
-              "code": "err_stage", "args": [_ETAPA_COD.get(file_id, "stage_start"), type(e).__name__, str(e)],
-              "details": _detalhes_erro(file_id, e, rastreio)})
+        codigo_etapa = _ETAPA_COD.get(file_id, "stage_start")
+        codigo, args, texto = _motivo_falha(e) or ("err_stage", [codigo_etapa, type(e).__name__, str(e)],
+                                                   f"A conversão falhou na etapa de {etapa} ({type(e).__name__}): {e}")
+        emit({"type": "error", "fileId": file_id, "error": texto, "code": codigo, "args": args,
+              "details": _detalhes_erro(file_id, e, rastreio),
+              "failedPart": "translation" if codigo_etapa == "stage_translation" else None})
 
 
 async def main():
@@ -1102,9 +1195,11 @@ async def main():
             config = json.load(f)
     else:
         config = json.loads(arg)
-    global _vagas, TTS_CONEXOES, TTS_MAX, FFMPEG_PARALELO
+    global _vagas, TTS_CONEXOES, TTS_MAX, FFMPEG_PARALELO, _LACO, _MODO_LEVE
+    _LACO = asyncio.get_running_loop()
     # Dois modos: adaptável (o padrão) e leve. O antigo "turbo" é ignorado (vira o adaptável, que já vai além dele).
     leve = bool(config.get("lite"))
+    _MODO_LEVE = leve
     if leve:
         # Modo leve: um livro por vez, menos conexões de voz, um FFmpeg por vez e prioridade mínima.
         # Converte mais devagar, mas o computador e o app ficam livres.
@@ -1121,6 +1216,8 @@ async def main():
         TTS_CONEXOES = min(TTS_CONEXOES, TTS_MAX)
     _conexoes = _ControleConexoes(TTS_CONEXOES, min(TTS_MIN, TTS_CONEXOES), TTS_MAX,
                                   adaptar=not leve and config.get("adaptive_connections", True) is not False)
+    if isinstance(config.get("foreground"), bool):  # como a janela estava quando a conversão começou
+        _aplicar_plano(config["foreground"])
     _sem_ffmpeg = asyncio.Semaphore(FFMPEG_PARALELO)
     _vagas = asyncio.Condition()
     _sem_traducao = asyncio.Semaphore(1 if leve else 3)
@@ -1156,16 +1253,63 @@ def _proteger_contra_sinais():
                 pass
 
 
+# Janela do app em primeiro plano: a conversão ganha prioridade normal e mais conexões de voz; minimizada ou
+# atrás de outras janelas, volta à prioridade abaixo do normal e a menos conexões, para o computador ficar livre.
+# Quem chama manda {"foreground": true|false} numa linha da entrada (sem aviso nenhum, nada muda).
+TTS_MAX_FUNDO = 20
+_LACO = None
+_MODO_LEVE = False
+
+
+def _definir_prioridade_windows(classe):
+    """Prioridade deste processo no Windows (e dos FFmpeg abertos depois). Com os tipos declarados: sem eles,
+    o identificador do processo era truncado em 64 bits e a prioridade não mudava."""
+    global _CLASSE_PRIORIDADE
+    import ctypes
+    from ctypes import wintypes
+    k32 = ctypes.windll.kernel32
+    k32.GetCurrentProcess.restype = wintypes.HANDLE
+    k32.SetPriorityClass.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+    _CLASSE_PRIORIDADE = classe
+    k32.SetPriorityClass(k32.GetCurrentProcess(), classe)
+
+
+def _aplicar_plano(frente):
+    if _MODO_LEVE:
+        return  # o modo leve fica sempre leve
+    if os.name == "nt":
+        try:
+            _definir_prioridade_windows(0x00000020 if frente else 0x00004000)  # NORMAL / BELOW_NORMAL
+        except Exception:
+            pass
+
+    def conexoes():
+        if _conexoes is None:
+            return
+        _conexoes.maximo = TTS_MAX if frente else min(TTS_MAX, TTS_MAX_FUNDO)
+        _conexoes.limite = min(_conexoes.limite, _conexoes.maximo)
+    if _LACO is not None:
+        _LACO.call_soon_threadsafe(conexoes)
+    emit({"type": "log", "message": "Janela do app em primeiro plano: conversão com prioridade" if frente
+          else "Janela do app minimizada ou em segundo plano: conversão mais leve"})
+
+
 def _encerrar_se_o_app_fechar():
     """O servidor do app mantém a entrada deste processo aberta. Se ele fechar (app encerrado), a
     entrada termina e a conversão para também, em vez de ficar rodando sozinha. O que já foi narrado
-    fica no cache e a conversão continua de onde parou na próxima vez."""
+    fica no cache e a conversão continua de onde parou na próxima vez. Pela mesma entrada chegam os
+    avisos de primeiro plano ({"foreground": ...})."""
     import threading
 
     def vigiar():
         try:
-            while sys.stdin.read(1024):
-                pass
+            for linha in sys.stdin:
+                try:
+                    pedido = json.loads(linha)
+                except ValueError:
+                    continue
+                if isinstance(pedido, dict) and isinstance(pedido.get("foreground"), bool):
+                    _aplicar_plano(pedido["foreground"])
         except Exception:
             pass
         os._exit(1)
@@ -1179,12 +1323,9 @@ def _prioridade_baixa(minima=False):
     """A conversão roda com prioridade abaixo do normal: o app (carregar livros, capas) e o resto do
     computador continuam rápidos; a conversão usa a CPU que sobra, que costuma ser quase toda.
     No modo leve, prioridade mínima (só usa a CPU que ninguém está usando), também para o FFmpeg."""
-    global _CLASSE_PRIORIDADE
     try:
         if os.name == "nt":
-            import ctypes
-            _CLASSE_PRIORIDADE = 0x00000040 if minima else 0x00004000
-            ctypes.windll.kernel32.SetPriorityClass(ctypes.windll.kernel32.GetCurrentProcess(), _CLASSE_PRIORIDADE)
+            _definir_prioridade_windows(0x00000040 if minima else 0x00004000)
         else:
             os.nice(10 if minima else 5)
     except Exception:
